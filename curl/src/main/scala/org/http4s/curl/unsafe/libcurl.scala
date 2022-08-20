@@ -24,9 +24,14 @@ import scala.scalanative.unsafe._
 @nowarn
 private[curl] object libcurl {
 
+  type CURL
   type CURLcode = CInt
   type CURLM
   type CURLMcode = CInt
+
+  type CURLoption = CUnsignedInt
+  final val CURLOPTTYPE_OBJECTPOINT = 10000
+  final val CURLOPT_URL = CURLOPTTYPE_OBJECTPOINT + 2
 
   def curl_global_init(flags: CLongInt): CURLcode = extern
 
@@ -41,9 +46,20 @@ private[curl] object libcurl {
       extra_fds: Ptr[Byte],
       extra_nfds: CUnsignedInt,
       timeout_ms: CInt,
-      ret: Ptr[CInt],
+      numfds: Ptr[CInt],
   ): CURLMcode = extern
 
   def curl_multi_perform(multi_handle: Ptr[CURLM], running_handles: Ptr[CInt]): CURLMcode = extern
+
+  def curl_multi_add_handle(multi_handle: Ptr[CURLM], curl_handle: Ptr[CURL]): CURLMcode = extern
+
+  def curl_multi_remove_handle(multi_handle: Ptr[CURLM], curl_handle: Ptr[CURL]): CURLMcode = extern
+
+  def curl_easy_init(): Ptr[CURL] = extern
+
+  def curl_easy_cleanup(curl: Ptr[CURL]): Unit = extern
+
+  def curl_easy_setopt(curl: Ptr[CURL], option: CURLOPT_URL.type, URL: Ptr[CChar]): CURLcode =
+    extern
 
 }

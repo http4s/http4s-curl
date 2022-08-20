@@ -27,16 +27,18 @@ final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM])
 
   def poll(timeout: Duration): Boolean = {
 
-    val pollCode = libcurl.curl_multi_poll(
-      multiHandle,
-      null,
-      0.toUInt,
-      timeout.toMillis.min(Int.MaxValue).toInt,
-      null,
-    )
+    if (timeout > Duration.Zero) {
+      val pollCode = libcurl.curl_multi_poll(
+        multiHandle,
+        null,
+        0.toUInt,
+        timeout.toMillis.min(Int.MaxValue).toInt,
+        null,
+      )
 
-    if (pollCode != 0)
-      throw new RuntimeException(s"curl_multi_poll: $pollCode")
+      if (pollCode != 0)
+        throw new RuntimeException(s"curl_multi_poll: $pollCode")
+    }
 
     val runningHandles = stackalloc[CInt]()
     val performCode = libcurl.curl_multi_perform(multiHandle, runningHandles)
@@ -46,6 +48,17 @@ final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM])
     !runningHandles > 0
   }
 
+  def addHandle(handle: Ptr[libcurl.CURL]): Unit = {
+    val code = libcurl.curl_multi_add_handle(multiHandle, handle)
+    if (code != 0)
+      throw new RuntimeException(s"curl_multi_add_handle: $code")
+  }
+
+  def removeHandle(handle: Ptr[libcurl.CURL]): Unit = {
+    val code = libcurl.curl_multi_remove_handle(multiHandle, handle)
+    if (code != 0)
+      throw new RuntimeException(s"curl_multi_remove_handle: $code")
+  }
 }
 
 private[curl] object CurlExecutorScheduler {
