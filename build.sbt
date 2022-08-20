@@ -20,6 +20,6 @@ lazy val curl = project
     name := "http4s-curl",
     libraryDependencies ++= Seq(
       "com.armanbilge" %%% "http4s-client" % http4sVersion,
-      "com.armanbilge" %%% "munit-cats-effect" % munitCEVersion,
+      "com.armanbilge" %%% "munit-cats-effect" % munitCEVersion % Test,
     ),
   )
