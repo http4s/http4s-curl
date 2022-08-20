@@ -18,6 +18,7 @@ package org.http4s.curl
 
 import cats.effect.IO
 import cats.effect.Resource
+import org.http4s.HttpVersion
 import org.http4s.client.Client
 import org.http4s.curl.unsafe.CurlExecutorScheduler
 import org.http4s.curl.unsafe.libcurl
@@ -33,23 +34,66 @@ private[curl] object CurlClient {
           val handle = libcurl.curl_easy_init()
           if (handle == null)
             throw new RuntimeException("curl_easy_init")
-          ec.addHandle(handle)
           handle
         }
       } { handle =>
-        IO {
-          ec.removeHandle(handle)
-          libcurl.curl_easy_cleanup(handle)
-        }
+        IO(libcurl.curl_easy_cleanup(handle))
       }
 
       _ <- Resource.eval {
         IO {
           Zone { implicit z =>
-            libcurl.curl_easy_setopt(handle, libcurl.CURLOPT_URL, toCString(req.uri.renderString))
+            @inline def throwOnError(thunk: => libcurl.CURLcode): Unit = {
+              val code = thunk
+              if (code != 0)
+                throw new RuntimeException(s"curl_easy_setop: $code")
+            }
+
+            throwOnError(
+              libcurl.curl_easy_setopt_customrequest(
+                handle,
+                libcurl.CURLOPT_CUSTOMREQUEST,
+                toCString(req.method.renderString),
+              )
+            )
+
+            throwOnError(
+              libcurl.curl_easy_setopt_url(
+                handle,
+                libcurl.CURLOPT_URL,
+                toCString(req.uri.renderString),
+              )
+            )
+
+            val httpVersion = req.httpVersion match {
+              case HttpVersion.`HTTP/1.0` => libcurl.CURL_HTTP_VERSION_1_0
+              case HttpVersion.`HTTP/1.1` => libcurl.CURL_HTTP_VERSION_1_1
+              case HttpVersion.`HTTP/2` => libcurl.CURL_HTTP_VERSION_2
+              case HttpVersion.`HTTP/3` => libcurl.CURL_HTTP_VERSION_3
+              case _ => libcurl.CURL_HTTP_VERSION_NONE
+            }
+            throwOnError(
+              libcurl.curl_easy_setopt_http_version(
+                handle,
+                libcurl.CURLOPT_HTTP_VERSION,
+                httpVersion,
+              )
+            )
+
+            var headers: Ptr[libcurl.curl_slist] = null
+            req.headers.foreach { header =>
+              headers = libcurl.curl_slist_append(headers, toCString(header.toString))
+            }
+            throwOnError(
+              libcurl.curl_easy_setopt_httpheader(handle, libcurl.CURLOPT_HTTPHEADER, headers)
+            )
+            libcurl.curl_slist_free_all(headers)
+
           }
         }
       }
+
+      _ <- Resource.make(IO(ec.addHandle(handle)))(_ => IO(ec.removeHandle(handle)))
     } yield ???
   }
 
