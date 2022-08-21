@@ -125,10 +125,6 @@ jobs:
         if: matrix.java == 'temurin@8' && !startsWith(matrix.scala, '3.')
         run: sbt '++${{ matrix.scala }}' 'scalafixAll --check'
 
-      - name: Check unused compile dependencies
-        if: matrix.java == 'temurin@8'
-        run: sbt '++${{ matrix.scala }}' unusedCompileDependenciesTest
-
       - name: Make target directories
         if: github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
         run: mkdir -p target curl/target example/target project/target
