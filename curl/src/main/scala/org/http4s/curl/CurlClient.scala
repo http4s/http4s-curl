@@ -210,7 +210,7 @@ private[curl] object CurlClient {
                     .liftTo[IO]
 
                   def parseHeader(header: String): IO[Header.Raw] =
-                    header.split(": ") match {
+                    header.dropRight(2).split(": ") match {
                       case Array(name, value) => IO.pure(Header.Raw(CIString(name), value))
                       case _ => IO.raiseError(new RuntimeException("header_callback"))
                     }
@@ -238,7 +238,7 @@ private[curl] object CurlClient {
                             }
                           case Some(wipResponse) =>
                             decoded.flatMap {
-                              case "" => response.complete(Right(wipResponse))
+                              case "\r\n" => response.complete(Right(wipResponse))
                               case header =>
                                 parseHeader(header).flatMap(h =>
                                   responseBuilder.set(Some(wipResponse.withHeaders(h)))
