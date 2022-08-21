@@ -40,6 +40,7 @@ import java.util.Collections
 import java.util.IdentityHashMap
 import scala.scalanative.unsafe._
 import fs2.Chunk
+import scala.scalanative.unsigned._
 
 private[curl] object CurlClient {
 
@@ -72,12 +73,38 @@ private[curl] object CurlClient {
       unpauseRecv = recvPause.set(false).to[IO] *>
         sendPause.get.to[IO].flatMap { p =>
           IO {
-            libcurl.curl_easy_pause(
+            val code = libcurl.curl_easy_pause(
               handle,
               if (p) libcurl.CURLPAUSE_SEND else libcurl.CURLPAUSE_SEND_CONT,
             )
+            if (code != 0)
+              throw new RuntimeException(s"curl_easy_pause: $code")
           }
         }
+
+      unpauseSend = sendPause.set(false).to[IO] *>
+        recvPause.get.to[IO].flatMap { p =>
+          IO {
+            val code = libcurl.curl_easy_pause(
+              handle,
+              if (p) libcurl.CURLPAUSE_RECV else libcurl.CURLPAUSE_RECV_CONT,
+            )
+            if (code != 0)
+              throw new RuntimeException(s"curl_easy_pause: $code")
+          }
+        }
+
+      requestBodyChunk <- Ref[SyncIO].of(Option(ByteVector.empty)).to[IO].toResource
+      requestBodyQueue <- Queue.synchronous[IO, Unit].toResource
+      _ <- req.body.chunks
+        .map(_.toByteVector)
+        .noneTerminate
+        .foreach { chunk =>
+          requestBodyQueue.take *> requestBodyChunk.set(chunk).to[IO] *> unpauseSend
+        }
+        .compile
+        .drain
+        .background
 
       responseBodyQueue <- Queue.synchronous[IO, Option[ByteVector]].toResource
       responseBody = Stream
@@ -142,6 +169,37 @@ private[curl] object CurlClient {
               libcurl.curl_easy_setopt_httpheader(handle, libcurl.CURLOPT_HTTPHEADER, headers)
             )
             libcurl.curl_slist_free_all(headers)
+
+            throwOnError {
+              val readCallback: libcurl.read_callback = {
+                (buffer: Ptr[CChar], size: CSize, nitems: CSize, _: Ptr[Byte]) =>
+                  requestBodyChunk
+                    .modify {
+                      case Some(bytes) =>
+                        val (left, right) = bytes.splitAt((size * nitems).toLong)
+                        (Some(right), Some(left))
+                      case None => (None, None)
+                    }
+                    .unsafeRunSync() match {
+                    case Some(bytes) if bytes.nonEmpty =>
+                      bytes.copyToPtr(buffer, 0)
+                      bytes.length.toULong
+                    case Some(_) =>
+                      dispatcher.unsafeRunAndForget(
+                        sendPause.set(true).to[IO] *> requestBodyQueue.offer(())
+                      )
+                      libcurl.CURL_READFUNC_PAUSE
+                    case None => 0.toULong
+                  }
+              }
+
+              gcRoot.add(readCallback)
+              libcurl.curl_easy_setopt_readfunction(
+                handle,
+                libcurl.CURLOPT_READFUNCTION,
+                readCallback,
+              )
+            }
 
             throwOnError {
               val headerCallback: libcurl.header_callback = {
