@@ -11,7 +11,7 @@ val http4sVersion = "0.23.14-101-02562a0-SNAPSHOT"
 val munitCEVersion = "2.0-4e051ab-SNAPSHOT"
 ThisBuild / resolvers ++= Resolver.sonatypeOssRepos("snapshots")
 
-lazy val root = project.in(file(".")).enablePlugins(NoPublishPlugin).aggregate(curl)
+lazy val root = project.in(file(".")).enablePlugins(NoPublishPlugin).aggregate(curl, example)
 
 lazy val curl = project
   .in(file("curl"))
@@ -23,3 +23,8 @@ lazy val curl = project
       "com.armanbilge" %%% "munit-cats-effect" % munitCEVersion % Test,
     ),
   )
+
+lazy val example = project
+  .in(file("example"))
+  .enablePlugins(ScalaNativePlugin, NoPublishPlugin)
+  .dependsOn(curl)

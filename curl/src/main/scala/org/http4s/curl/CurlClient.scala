@@ -24,6 +24,7 @@ import cats.effect.std.Dispatcher
 import cats.effect.std.Queue
 import cats.effect.syntax.all._
 import cats.syntax.all._
+import fs2.Chunk
 import fs2.Stream
 import org.http4s.Header
 import org.http4s.Headers
@@ -39,7 +40,6 @@ import scodec.bits.ByteVector
 import java.util.Collections
 import java.util.IdentityHashMap
 import scala.scalanative.unsafe._
-import fs2.Chunk
 import scala.scalanative.unsigned._
 
 private[curl] object CurlClient {
@@ -188,7 +188,7 @@ private[curl] object CurlClient {
                       dispatcher.unsafeRunAndForget(
                         sendPause.set(true).to[IO] *> requestBodyQueue.offer(())
                       )
-                      libcurl.CURL_READFUNC_PAUSE
+                      libcurl.CURL_READFUNC_PAUSE.toULong
                     case None => 0.toULong
                   }
               }
@@ -280,7 +280,7 @@ private[curl] object CurlClient {
               val writeCallback: libcurl.write_callback = {
                 (buffer: Ptr[CChar], _: CSize, nmemb: CSize, _: Ptr[Byte]) =>
                   if (recvPause.getAndSet(true).unsafeRunSync())
-                    libcurl.CURL_WRITEFUNC_PAUSE
+                    libcurl.CURL_WRITEFUNC_PAUSE.toULong
                   else {
                     dispatcher.unsafeRunAndForget(
                       responseBodyQueue.offer(Some(ByteVector.fromPtr(buffer, nmemb.toLong)))

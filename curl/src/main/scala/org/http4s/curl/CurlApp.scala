@@ -16,13 +16,19 @@
 
 package org.http4s.curl
 
+import cats.effect.IO
 import cats.effect.IOApp
 import cats.effect.unsafe.IORuntime
+import org.http4s.client.Client
+import org.http4s.curl.unsafe.CurlExecutorScheduler
 import org.http4s.curl.unsafe.CurlRuntime
 
 trait CurlApp extends IOApp {
 
   final override lazy val runtime: IORuntime = CurlRuntime(runtimeConfig)
+
+  final lazy val curlClient: Client[IO] =
+    CurlClient(runtime.compute.asInstanceOf[CurlExecutorScheduler])
 
 }
 

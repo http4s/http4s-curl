@@ -18,7 +18,6 @@ package org.http4s.curl.unsafe
 
 import scala.annotation.nowarn
 import scala.scalanative.unsafe._
-import scala.scalanative.unsigned._
 
 @link("curl")
 @extern
@@ -63,9 +62,9 @@ private[curl] object libcurl {
   final val CURLPAUSE_ALL = CURLPAUSE_RECV | CURLPAUSE_SEND
   final val CURLPAUSE_CONT = CURLPAUSE_RECV_CONT | CURLPAUSE_SEND_CONT
 
-  final val CURL_WRITEFUNC_PAUSE = 0x10000001L.toULong
-  final val CURL_READFUNC_ABORT = 0x10000000L.toULong
-  final val CURL_READFUNC_PAUSE = 0x10000001L.toULong
+  final val CURL_WRITEFUNC_PAUSE = 0x10000001L
+  final val CURL_READFUNC_ABORT = 0x10000000L
+  final val CURL_READFUNC_PAUSE = 0x10000001L
 
   type curl_slist
 
