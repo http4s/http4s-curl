@@ -257,7 +257,6 @@ private[curl] object CurlClient {
                             decoded.flatMap { header =>
                               parseHeader(header)
                                 .flatMap(h => trailerHeadersBuilder.update(_.put(h)))
-
                             }
                         }
                         .onError(ex => trailerHeaders.complete(Left(ex)).void),
