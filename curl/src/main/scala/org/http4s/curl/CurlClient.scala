@@ -46,85 +46,85 @@ import scala.scalanative.unsigned._
 private[curl] object CurlClient {
 
   def apply(ec: CurlExecutorScheduler): Client[IO] = Client { req =>
-    for {
-      gcRoot <- Resource.make {
-        IO(Collections.newSetFromMap[Any](new IdentityHashMap))
-      } { gcr =>
-        IO(gcr.clear())
-      }
-
-      dispatcher <- Dispatcher.sequential[IO]
-
-      handle <- Resource.make {
-        IO {
-          val handle = libcurl.curl_easy_init()
-          if (handle == null)
-            throw new RuntimeException("curl_easy_init")
-          handle
+    Resource.make(IO(Zone.open()))(z => IO(z.close())).flatMap { implicit z =>
+      for {
+        gcRoot <- Resource.make {
+          IO(Collections.newSetFromMap[Any](new IdentityHashMap))
+        } { gcr =>
+          IO(gcr.clear())
         }
-      } { handle =>
-        IO(libcurl.curl_easy_cleanup(handle))
-      }
 
-      done <- IO.deferred[Either[Throwable, Unit]].toResource
+        dispatcher <- Dispatcher.sequential[IO]
 
-      recvPause <- Ref[SyncIO].of(false).to[IO].toResource
-      sendPause <- Ref[SyncIO].of(false).to[IO].toResource
-
-      unpauseRecv = recvPause.set(false).to[IO] *>
-        sendPause.get.to[IO].flatMap { p =>
+        handle <- Resource.make {
           IO {
-            val code = libcurl.curl_easy_pause(
-              handle,
-              if (p) libcurl_const.CURLPAUSE_SEND else libcurl_const.CURLPAUSE_SEND_CONT,
-            )
-            if (code != 0)
-              throw new RuntimeException(s"curl_easy_pause: $code")
+            val handle = libcurl.curl_easy_init()
+            if (handle == null)
+              throw new RuntimeException("curl_easy_init")
+            handle
           }
+        } { handle =>
+          IO(libcurl.curl_easy_cleanup(handle))
         }
 
-      unpauseSend = sendPause.set(false).to[IO] *>
-        recvPause.get.to[IO].flatMap { p =>
+        done <- IO.deferred[Either[Throwable, Unit]].toResource
+
+        recvPause <- Ref[SyncIO].of(false).to[IO].toResource
+        sendPause <- Ref[SyncIO].of(false).to[IO].toResource
+
+        unpauseRecv = recvPause.set(false).to[IO] *>
+          sendPause.get.to[IO].flatMap { p =>
+            IO {
+              val code = libcurl.curl_easy_pause(
+                handle,
+                if (p) libcurl_const.CURLPAUSE_SEND else libcurl_const.CURLPAUSE_SEND_CONT,
+              )
+              if (code != 0)
+                throw new RuntimeException(s"curl_easy_pause: $code")
+            }
+          }
+
+        unpauseSend = sendPause.set(false).to[IO] *>
+          recvPause.get.to[IO].flatMap { p =>
+            IO {
+              val code = libcurl.curl_easy_pause(
+                handle,
+                if (p) libcurl_const.CURLPAUSE_RECV else libcurl_const.CURLPAUSE_RECV_CONT,
+              )
+              if (code != 0)
+                throw new RuntimeException(s"curl_easy_pause: $code")
+            }
+          }
+
+        requestBodyChunk <- Ref[SyncIO].of(Option(ByteVector.empty)).to[IO].toResource
+        requestBodyQueue <- Queue.synchronous[IO, Unit].toResource
+        _ <- req.body.chunks
+          .map(_.toByteVector)
+          .noneTerminate
+          .foreach { chunk =>
+            requestBodyQueue.take *> requestBodyChunk.set(chunk).to[IO] *> unpauseSend
+          }
+          .compile
+          .drain
+          .background
+
+        responseBodyQueue <- Queue.synchronous[IO, Option[ByteVector]].toResource
+        responseBody = Stream
+          .repeatEval(unpauseRecv *> responseBodyQueue.take)
+          .unNoneTerminate
+          .map(Chunk.byteVector(_))
+          .unchunks
+
+        trailerHeadersBuilder <- IO.ref(Headers.empty).toResource
+        trailerHeaders <- IO.deferred[Either[Throwable, Headers]].toResource
+
+        responseBuilder <- IO
+          .ref(Option.empty[Response[IO]])
+          .toResource
+        response <- IO.deferred[Either[Throwable, Response[IO]]].toResource
+
+        _ <- Resource.eval {
           IO {
-            val code = libcurl.curl_easy_pause(
-              handle,
-              if (p) libcurl_const.CURLPAUSE_RECV else libcurl_const.CURLPAUSE_RECV_CONT,
-            )
-            if (code != 0)
-              throw new RuntimeException(s"curl_easy_pause: $code")
-          }
-        }
-
-      requestBodyChunk <- Ref[SyncIO].of(Option(ByteVector.empty)).to[IO].toResource
-      requestBodyQueue <- Queue.synchronous[IO, Unit].toResource
-      _ <- req.body.chunks
-        .map(_.toByteVector)
-        .noneTerminate
-        .foreach { chunk =>
-          requestBodyQueue.take *> requestBodyChunk.set(chunk).to[IO] *> unpauseSend
-        }
-        .compile
-        .drain
-        .background
-
-      responseBodyQueue <- Queue.synchronous[IO, Option[ByteVector]].toResource
-      responseBody = Stream
-        .repeatEval(unpauseRecv *> responseBodyQueue.take)
-        .unNoneTerminate
-        .map(Chunk.byteVector(_))
-        .unchunks
-
-      trailerHeadersBuilder <- IO.ref(Headers.empty).toResource
-      trailerHeaders <- IO.deferred[Either[Throwable, Headers]].toResource
-
-      responseBuilder <- IO
-        .ref(Option.empty[Response[IO]])
-        .toResource
-      response <- IO.deferred[Either[Throwable, Response[IO]]].toResource
-
-      _ <- Resource.eval {
-        IO {
-          Zone { implicit z =>
             @inline def throwOnError(thunk: => libcurl.CURLcode): Unit = {
               val code = thunk
               if (code != 0)
@@ -169,7 +169,6 @@ private[curl] object CurlClient {
             throwOnError(
               libcurl.curl_easy_setopt_httpheader(handle, libcurl_const.CURLOPT_HTTPHEADER, headers)
             )
-            libcurl.curl_slist_free_all(headers)
 
             throwOnError {
               val readCallback: libcurl.read_callback = {
@@ -300,19 +299,19 @@ private[curl] object CurlClient {
 
           }
         }
-      }
 
-      _ <- Resource.eval {
-        IO {
-          ec.addHandle(
-            handle,
-            x => dispatcher.unsafeRunAndForget(done.complete(x) *> responseBodyQueue.offer(None)),
-          )
+        _ <- Resource.eval {
+          IO {
+            ec.addHandle(
+              handle,
+              x => dispatcher.unsafeRunAndForget(done.complete(x) *> responseBodyQueue.offer(None)),
+            )
+          }
         }
-      }
 
-      readyResponse <- response.get.rethrow.toResource
-    } yield readyResponse
+        readyResponse <- response.get.rethrow.toResource
+      } yield readyResponse
+    }
   }
 
 }
