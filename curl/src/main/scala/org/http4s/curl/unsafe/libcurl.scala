@@ -19,21 +19,11 @@ package org.http4s.curl.unsafe
 import scala.annotation.nowarn
 import scala.scalanative.unsafe._
 
-@link("curl")
-@extern
-@nowarn
-private[curl] object libcurl {
+import libcurl_const._
 
-  type CURL
-  type CURLcode = CInt
-  type CURLM
-  type CURLMcode = CInt
-
-  type CURLMSG = CUnsignedInt
+private[curl] object libcurl_const {
   final val CURLMSG_DONE = 1L
-  type CURLMsg = CStruct3[CURLMSG, Ptr[CURL], CURLcode]
 
-  type CURLoption = CUnsignedInt
   final val CURLOPTTYPE_LONG = 0
   final val CURLOPTTYPE_OBJECTPOINT = 10000
   final val CURLOPTTYPE_FUNCTIONPOINT = 20000
@@ -65,6 +55,22 @@ private[curl] object libcurl {
   final val CURL_WRITEFUNC_PAUSE = 0x10000001L
   final val CURL_READFUNC_ABORT = 0x10000000L
   final val CURL_READFUNC_PAUSE = 0x10000001L
+}
+
+@link("curl")
+@extern
+@nowarn
+private[curl] object libcurl {
+
+  type CURL
+  type CURLcode = CInt
+  type CURLM
+  type CURLMcode = CInt
+
+  type CURLMSG = CUnsignedInt
+  type CURLMsg = CStruct3[CURLMSG, Ptr[CURL], CURLcode]
+
+  type CURLoption = CUnsignedInt
 
   type curl_slist
 

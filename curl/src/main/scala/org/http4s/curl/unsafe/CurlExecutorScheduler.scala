@@ -51,7 +51,7 @@ final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM])
     while ({
       val info = libcurl.curl_multi_info_read(multiHandle, null)
       if (info != null) {
-        if (info._1 == libcurl.CURLMSG_DONE) {
+        if (info._1 == libcurl_const.CURLMSG_DONE) {
           callbacks.remove(info._2).foreach { cb =>
             cb(
               if (info._3 == 0) Right(())
