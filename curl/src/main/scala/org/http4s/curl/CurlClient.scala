@@ -18,23 +18,28 @@ package org.http4s.curl
 
 import cats.effect.IO
 import cats.effect.Resource
+import cats.effect.SyncIO
+import cats.effect.kernel.Ref
 import cats.effect.std.Dispatcher
+import cats.effect.std.Queue
 import cats.effect.syntax.all._
 import cats.syntax.all._
+import fs2.Stream
+import org.http4s.Header
 import org.http4s.Headers
 import org.http4s.HttpVersion
 import org.http4s.Response
+import org.http4s.Status
 import org.http4s.client.Client
 import org.http4s.curl.unsafe.CurlExecutorScheduler
 import org.http4s.curl.unsafe.libcurl
+import org.typelevel.ci.CIString
+import scodec.bits.ByteVector
 
-import scala.scalanative.unsafe._
 import java.util.Collections
 import java.util.IdentityHashMap
-import scodec.bits.ByteVector
-import org.http4s.Status
-import org.http4s.Header
-import org.typelevel.ci.CIString
+import scala.scalanative.unsafe._
+import fs2.Chunk
 
 private[curl] object CurlClient {
 
@@ -47,7 +52,6 @@ private[curl] object CurlClient {
       }
 
       dispatcher <- Dispatcher.sequential[IO]
-      done <- IO.deferred[Either[Throwable, Unit]].toResource
 
       handle <- Resource.make {
         IO {
@@ -59,6 +63,28 @@ private[curl] object CurlClient {
       } { handle =>
         IO(libcurl.curl_easy_cleanup(handle))
       }
+
+      done <- IO.deferred[Either[Throwable, Unit]].toResource
+
+      recvPause <- Ref[SyncIO].of(false).to[IO].toResource
+      sendPause <- Ref[SyncIO].of(false).to[IO].toResource
+
+      unpauseRecv = recvPause.set(false).to[IO] *>
+        sendPause.get.to[IO].flatMap { p =>
+          IO {
+            libcurl.curl_easy_pause(
+              handle,
+              if (p) libcurl.CURLPAUSE_SEND else libcurl.CURLPAUSE_SEND_CONT,
+            )
+          }
+        }
+
+      responseQueue <- Queue.synchronous[IO, Option[ByteVector]].toResource
+      responseBody = Stream
+        .repeatEval(unpauseRecv *> responseQueue.take)
+        .unNoneTerminate
+        .map(Chunk.byteVector(_))
+        .unchunks
 
       trailerHeadersBuilder <- IO.ref(Headers.empty).toResource
       trailerHeaders <- IO.deferred[Either[Throwable, Headers]].toResource
@@ -145,7 +171,7 @@ private[curl] object CurlClient {
                                   status <- IO(c.toInt).flatMap(Status.fromInt(_).liftTo[IO])
                                   _ <- responseBuilder.set(
                                     Some(
-                                      Response(status, version)
+                                      Response(status, version, body = responseBody)
                                         .withTrailerHeaders(trailerHeaders.get.rethrow)
                                     )
                                   )

@@ -51,6 +51,15 @@ private[curl] object libcurl {
   final val CURL_HTTP_VERSION_2 = 3L
   final val CURL_HTTP_VERSION_3 = 30L
 
+  final val CURLPAUSE_RECV = 1 << 0
+  final val CURLPAUSE_RECV_CONT = 0
+
+  final val CURLPAUSE_SEND = 1 << 2
+  final val CURLPAUSE_SEND_CONT = 0
+
+  final val CURLPAUSE_ALL = CURLPAUSE_RECV | CURLPAUSE_SEND
+  final val CURLPAUSE_CONT = CURLPAUSE_RECV_CONT | CURLPAUSE_SEND_CONT
+
   type curl_slist
 
   type header_callback = CFuncPtr4[Ptr[CChar], CSize, CSize, Ptr[Byte], CSize]
@@ -83,6 +92,8 @@ private[curl] object libcurl {
   def curl_easy_init(): Ptr[CURL] = extern
 
   def curl_easy_cleanup(curl: Ptr[CURL]): Unit = extern
+
+  def curl_easy_pause(handle: Ptr[CURL], bitmask: CInt): CURLcode = extern
 
   @name("curl_easy_setopt")
   def curl_easy_setopt_url(curl: Ptr[CURL], option: CURLOPT_URL.type, URL: Ptr[CChar]): CURLcode =
