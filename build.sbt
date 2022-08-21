@@ -6,6 +6,7 @@ ThisBuild / developers := List(
 ThisBuild / startYear := Some(2022)
 
 ThisBuild / crossScalaVersions := Seq("3.1.3", "2.13.8")
+ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("8"))
 
 ThisBuild / githubWorkflowBuildPostamble ~= {
   _.filterNot(_.name.contains("Check unused compile dependencies"))
