@@ -190,13 +190,17 @@ private[curl] object CurlClient {
                         .onError(ex => response.complete(Left(ex)).void),
 
                       // trailers
-                      decoded
+                      done.tryGet
                         .flatMap {
-                          case "" =>
+                          case Some(result) =>
                             trailerHeadersBuilder.get
-                              .flatMap(h => trailerHeaders.complete(Right(h)))
-                          case header =>
-                            parseHeader(header).flatMap(h => trailerHeadersBuilder.update(_.put(h)))
+                              .flatMap(h => trailerHeaders.complete(result.as(h)))
+                          case None =>
+                            decoded.flatMap { header =>
+                              parseHeader(header)
+                                .flatMap(h => trailerHeadersBuilder.update(_.put(h)))
+
+                            }
                         }
                         .onError(ex => trailerHeaders.complete(Left(ex)).void),
                     )
@@ -214,11 +218,39 @@ private[curl] object CurlClient {
               )
             }
 
+            throwOnError {
+              val writeCallback: libcurl.write_callback = {
+                (buffer: Ptr[CChar], _: CSize, nmemb: CSize, _: Ptr[Byte]) =>
+                  if (recvPause.getAndSet(true).unsafeRunSync())
+                    libcurl.CURL_WRITEFUNC_PAUSE
+                  else {
+                    dispatcher.unsafeRunAndForget(
+                      responseQueue.offer(Some(ByteVector.fromPtr(buffer, nmemb.toLong)))
+                    )
+                    nmemb
+                  }
+              }
+
+              gcRoot.add(writeCallback)
+              libcurl.curl_easy_setopt_writefunction(
+                handle,
+                libcurl.CURLOPT_WRITEFUNCTION,
+                writeCallback,
+              )
+            }
+
           }
         }
       }
 
-      _ <- IO(ec.addHandle(handle, x => dispatcher.unsafeRunAndForget(done.complete(x)))).toResource
+      _ <- Resource.eval {
+        IO {
+          ec.addHandle(
+            handle,
+            x => dispatcher.unsafeRunAndForget(done.complete(x) *> responseQueue.offer(None)),
+          )
+        }
+      }
 
       readyResponse <- response.get.rethrow.toResource
     } yield readyResponse

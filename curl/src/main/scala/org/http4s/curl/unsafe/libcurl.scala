@@ -18,6 +18,7 @@ package org.http4s.curl.unsafe
 
 import scala.annotation.nowarn
 import scala.scalanative.unsafe._
+import scala.scalanative.unsigned._
 
 @link("curl")
 @extern
@@ -44,6 +45,8 @@ private[curl] object libcurl {
   final val CURLOPT_HTTPHEADER = CURLOPTTYPE_STRINGPOINT + 23
   final val CURLOPT_HTTP_VERSION = CURLOPTTYPE_LONG + 84
   final val CURLOPT_HEADERFUNCTION = CURLOPTTYPE_FUNCTIONPOINT + 79
+  final val CURLOPT_WRITEFUNCTION = CURLOPTTYPE_FUNCTIONPOINT + 11
+  final val CURLOPT_READFUNCTION = CURLOPTTYPE_FUNCTIONPOINT + 12
 
   final val CURL_HTTP_VERSION_NONE = 0L
   final val CURL_HTTP_VERSION_1_0 = 1L
@@ -60,9 +63,13 @@ private[curl] object libcurl {
   final val CURLPAUSE_ALL = CURLPAUSE_RECV | CURLPAUSE_SEND
   final val CURLPAUSE_CONT = CURLPAUSE_RECV_CONT | CURLPAUSE_SEND_CONT
 
+  final val CURL_WRITEFUNC_PAUSE = 0x10000001L.toULong
+
   type curl_slist
 
   type header_callback = CFuncPtr4[Ptr[CChar], CSize, CSize, Ptr[Byte], CSize]
+
+  type write_callback = CFuncPtr4[Ptr[CChar], CSize, CSize, Ptr[Byte], CSize]
 
   def curl_global_init(flags: CLongInt): CURLcode = extern
 
@@ -127,6 +134,14 @@ private[curl] object libcurl {
   def curl_easy_setopt_headerfunction(
       curl: Ptr[CURL],
       option: CURLOPT_HEADERFUNCTION.type,
+      header_callback: header_callback,
+  ): CURLcode =
+    extern
+
+  @name("curl_easy_setopt")
+  def curl_easy_setopt_writefunction(
+      curl: Ptr[CURL],
+      option: CURLOPT_WRITEFUNCTION.type,
       header_callback: header_callback,
   ): CURLcode =
     extern
