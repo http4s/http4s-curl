@@ -79,9 +79,9 @@ private[curl] object CurlClient {
           }
         }
 
-      responseQueue <- Queue.synchronous[IO, Option[ByteVector]].toResource
+      responseBodyQueue <- Queue.synchronous[IO, Option[ByteVector]].toResource
       responseBody = Stream
-        .repeatEval(unpauseRecv *> responseQueue.take)
+        .repeatEval(unpauseRecv *> responseBodyQueue.take)
         .unNoneTerminate
         .map(Chunk.byteVector(_))
         .unchunks
@@ -147,7 +147,7 @@ private[curl] object CurlClient {
               val headerCallback: libcurl.header_callback = {
                 (buffer: Ptr[CChar], _: CSize, nitems: CSize, _: Ptr[Byte]) =>
                   val decoded = ByteVector
-                    .view(buffer.asInstanceOf[Ptr[Byte]], nitems.toLong)
+                    .view(buffer, nitems.toLong)
                     .decodeAscii
                     .liftTo[IO]
 
@@ -225,7 +225,7 @@ private[curl] object CurlClient {
                     libcurl.CURL_WRITEFUNC_PAUSE
                   else {
                     dispatcher.unsafeRunAndForget(
-                      responseQueue.offer(Some(ByteVector.fromPtr(buffer, nmemb.toLong)))
+                      responseBodyQueue.offer(Some(ByteVector.fromPtr(buffer, nmemb.toLong)))
                     )
                     nmemb
                   }
@@ -247,7 +247,7 @@ private[curl] object CurlClient {
         IO {
           ec.addHandle(
             handle,
-            x => dispatcher.unsafeRunAndForget(done.complete(x) *> responseQueue.offer(None)),
+            x => dispatcher.unsafeRunAndForget(done.complete(x) *> responseBodyQueue.offer(None)),
           )
         }
       }

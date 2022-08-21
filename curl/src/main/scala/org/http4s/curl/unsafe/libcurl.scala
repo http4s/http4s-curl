@@ -64,12 +64,16 @@ private[curl] object libcurl {
   final val CURLPAUSE_CONT = CURLPAUSE_RECV_CONT | CURLPAUSE_SEND_CONT
 
   final val CURL_WRITEFUNC_PAUSE = 0x10000001L.toULong
+  final val CURL_READFUNC_ABORT = 0x10000000L.toULong
+  final val CURL_READFUNC_PAUSE = 0x10000001L.toULong
 
   type curl_slist
 
   type header_callback = CFuncPtr4[Ptr[CChar], CSize, CSize, Ptr[Byte], CSize]
 
   type write_callback = CFuncPtr4[Ptr[CChar], CSize, CSize, Ptr[Byte], CSize]
+
+  type read_callback = CFuncPtr4[Ptr[CChar], CSize, CSize, Ptr[Byte], CSize]
 
   def curl_global_init(flags: CLongInt): CURLcode = extern
 
@@ -142,7 +146,15 @@ private[curl] object libcurl {
   def curl_easy_setopt_writefunction(
       curl: Ptr[CURL],
       option: CURLOPT_WRITEFUNCTION.type,
-      header_callback: header_callback,
+      write_callback: write_callback,
+  ): CURLcode =
+    extern
+
+  @name("curl_easy_setopt")
+  def curl_easy_setopt_readfunction(
+      curl: Ptr[CURL],
+      option: CURLOPT_READFUNCTION.type,
+      read_callback: read_callback,
   ): CURLcode =
     extern
 
