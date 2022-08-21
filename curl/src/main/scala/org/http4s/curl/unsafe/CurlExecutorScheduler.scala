@@ -18,12 +18,15 @@ package org.http4s.curl.unsafe
 
 import cats.effect.unsafe.PollingExecutorScheduler
 
+import scala.collection.mutable
 import scala.concurrent.duration.Duration
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
 
 final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM])
     extends PollingExecutorScheduler {
+
+  private val callbacks = mutable.Map[Ptr[libcurl.CURL], Either[Throwable, Unit] => Unit]()
 
   def poll(timeout: Duration): Boolean = {
 
@@ -45,19 +48,33 @@ final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM])
     if (performCode != 0)
       throw new RuntimeException(s"curl_multi_perform: $performCode")
 
+    while ({
+      val info = libcurl.curl_multi_info_read(multiHandle, null)
+      if (info != null) {
+        if (info._1 == libcurl.CURLMSG_DONE) {
+          callbacks.remove(info._2).foreach { cb =>
+            cb(
+              if (info._3 == 0) Right(())
+              else Left(new RuntimeException(s"curl_multi_info_read: ${info._3}"))
+            )
+          }
+
+          val code = libcurl.curl_multi_remove_handle(multiHandle, info._2)
+          if (code != 0)
+            throw new RuntimeException(s"curl_multi_remove_handle: $code")
+        }
+        true
+      } else false
+    }) {}
+
     !runningHandles > 0
   }
 
-  def addHandle(handle: Ptr[libcurl.CURL]): Unit = {
+  def addHandle(handle: Ptr[libcurl.CURL], cb: Either[Throwable, Unit] => Unit): Unit = {
     val code = libcurl.curl_multi_add_handle(multiHandle, handle)
     if (code != 0)
       throw new RuntimeException(s"curl_multi_add_handle: $code")
-  }
-
-  def removeHandle(handle: Ptr[libcurl.CURL]): Unit = {
-    val code = libcurl.curl_multi_remove_handle(multiHandle, handle)
-    if (code != 0)
-      throw new RuntimeException(s"curl_multi_remove_handle: $code")
+    callbacks(handle) = cb
   }
 }
 

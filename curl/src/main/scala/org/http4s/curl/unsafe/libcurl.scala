@@ -29,6 +29,10 @@ private[curl] object libcurl {
   type CURLM
   type CURLMcode = CInt
 
+  type CURLMSG = CUnsignedInt
+  final val CURLMSG_DONE = 1L
+  type CURLMsg = CStruct3[CURLMSG, Ptr[CURL], CURLcode]
+
   type CURLoption = CUnsignedInt
   final val CURLOPTTYPE_LONG = 0
   final val CURLOPTTYPE_OBJECTPOINT = 10000
@@ -68,6 +72,9 @@ private[curl] object libcurl {
   ): CURLMcode = extern
 
   def curl_multi_perform(multi_handle: Ptr[CURLM], running_handles: Ptr[CInt]): CURLMcode = extern
+
+  def curl_multi_info_read(multi_handle: Ptr[CURLM], msgs_in_queue: Ptr[CInt]): Ptr[CURLMsg] =
+    extern
 
   def curl_multi_add_handle(multi_handle: Ptr[CURLM], curl_handle: Ptr[CURL]): CURLMcode = extern
 

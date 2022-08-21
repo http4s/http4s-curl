@@ -47,6 +47,7 @@ private[curl] object CurlClient {
       }
 
       dispatcher <- Dispatcher.sequential[IO]
+      done <- IO.deferred[Either[Throwable, Unit]].toResource
 
       handle <- Resource.make {
         IO {
@@ -191,7 +192,7 @@ private[curl] object CurlClient {
         }
       }
 
-      _ <- Resource.make(IO(ec.addHandle(handle)))(_ => IO(ec.removeHandle(handle)))
+      _ <- IO(ec.addHandle(handle, x => dispatcher.unsafeRunAndForget(done.complete(x)))).toResource
 
       readyResponse <- response.get.rethrow.toResource
     } yield readyResponse
