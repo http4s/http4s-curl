@@ -19,6 +19,7 @@ package org.http4s.curl
 import cats.effect.IO
 import cats.effect.Resource
 import cats.effect.SyncIO
+import cats.effect.kernel.Deferred
 import cats.effect.kernel.Ref
 import cats.effect.std.Dispatcher
 import cats.effect.std.Queue
@@ -40,6 +41,8 @@ import scodec.bits.ByteVector
 
 import java.util.Collections
 import java.util.IdentityHashMap
+import scala.scalanative.runtime
+import scala.scalanative.runtime.Intrinsics
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
 
@@ -171,128 +174,78 @@ private[curl] object CurlClient {
             )
 
             throwOnError {
-              val readCallback: libcurl.read_callback = {
-                (buffer: Ptr[CChar], size: CSize, nitems: CSize, _: Ptr[Byte]) =>
-                  requestBodyChunk
-                    .modify {
-                      case Some(bytes) =>
-                        val (left, right) = bytes.splitAt((size * nitems).toLong)
-                        (Some(right), Some(left))
-                      case None => (None, None)
-                    }
-                    .unsafeRunSync() match {
-                    case Some(bytes) if bytes.nonEmpty =>
-                      bytes.copyToPtr(buffer, 0)
-                      bytes.length.toULong
-                    case Some(_) =>
-                      dispatcher.unsafeRunAndForget(
-                        sendPause.set(true).to[IO] *> requestBodyQueue.offer(())
-                      )
-                      libcurl_const.CURL_READFUNC_PAUSE.toULong
-                    case None => 0.toULong
-                  }
-              }
+              val data = ReadCallbackData(
+                requestBodyChunk,
+                requestBodyQueue,
+                sendPause,
+                dispatcher,
+              )
 
-              gcRoot.add(readCallback)
+              gcRoot.add(data)
+
+              libcurl.curl_easy_setopt_readdata(
+                handle,
+                libcurl_const.CURLOPT_READDATA,
+                toPtr(data),
+              )
+            }
+
+            throwOnError {
               libcurl.curl_easy_setopt_readfunction(
                 handle,
                 libcurl_const.CURLOPT_READFUNCTION,
-                readCallback,
+                readCallback(_, _, _, _),
               )
             }
 
             throwOnError {
-              val headerCallback: libcurl.header_callback = {
-                (buffer: Ptr[CChar], _: CSize, nitems: CSize, _: Ptr[Byte]) =>
-                  val decoded = ByteVector
-                    .view(buffer, nitems.toLong)
-                    .decodeAscii
-                    .liftTo[IO]
+              val data = HeaderCallbackData(
+                response,
+                responseBuilder,
+                trailerHeaders,
+                trailerHeadersBuilder,
+                done,
+                dispatcher,
+              )
 
-                  def parseHeader(header: String): IO[Header.Raw] =
-                    header.dropRight(2).split(": ") match {
-                      case Array(name, value) => IO.pure(Header.Raw(CIString(name), value))
-                      case _ => IO.raiseError(new RuntimeException("header_callback"))
-                    }
+              gcRoot.add(data)
 
-                  val go = response.tryGet
-                    .map(_.isEmpty)
-                    .ifM(
-                      // prelude
-                      responseBuilder.get
-                        .flatMap {
-                          case None =>
-                            decoded.map(_.split(' ')).flatMap {
-                              case Array(v, c, _) =>
-                                for {
-                                  version <- HttpVersion.fromString(v).liftTo[IO]
-                                  status <- IO(c.toInt).flatMap(Status.fromInt(_).liftTo[IO])
-                                  _ <- responseBuilder.set(
-                                    Some(
-                                      Response(status, version, body = responseBody)
-                                        .withTrailerHeaders(trailerHeaders.get.rethrow)
-                                    )
-                                  )
-                                } yield ()
-                              case _ => IO.raiseError(new RuntimeException("header_callback"))
-                            }
-                          case Some(wipResponse) =>
-                            decoded.flatMap {
-                              case "\r\n" => response.complete(Right(wipResponse))
-                              case header =>
-                                parseHeader(header).flatMap(h =>
-                                  responseBuilder.set(Some(wipResponse.withHeaders(h)))
-                                )
-                            }
-                        }
-                        .onError(ex => response.complete(Left(ex)).void),
+              libcurl.curl_easy_setopt_headerdata(
+                handle,
+                libcurl_const.CURLOPT_HEADERDATA,
+                toPtr(data),
+              )
+            }
 
-                      // trailers
-                      done.tryGet
-                        .flatMap {
-                          case Some(result) =>
-                            trailerHeadersBuilder.get
-                              .flatMap(h => trailerHeaders.complete(result.as(h)))
-                          case None =>
-                            decoded.flatMap { header =>
-                              parseHeader(header)
-                                .flatMap(h => trailerHeadersBuilder.update(_.put(h)))
-                            }
-                        }
-                        .onError(ex => trailerHeaders.complete(Left(ex)).void),
-                    )
-
-                  dispatcher.unsafeRunAndForget(go)
-
-                  nitems
-              }
-
-              gcRoot.add(headerCallback)
+            throwOnError {
               libcurl.curl_easy_setopt_headerfunction(
                 handle,
                 libcurl_const.CURLOPT_HEADERFUNCTION,
-                headerCallback,
+                headerCallback(_, _, _, _),
               )
             }
 
             throwOnError {
-              val writeCallback: libcurl.write_callback = {
-                (buffer: Ptr[CChar], _: CSize, nmemb: CSize, _: Ptr[Byte]) =>
-                  if (recvPause.getAndSet(true).unsafeRunSync())
-                    libcurl_const.CURL_WRITEFUNC_PAUSE.toULong
-                  else {
-                    dispatcher.unsafeRunAndForget(
-                      responseBodyQueue.offer(Some(ByteVector.fromPtr(buffer, nmemb.toLong)))
-                    )
-                    nmemb
-                  }
-              }
+              val data = WriteCallbackData(
+                recvPause,
+                responseBodyQueue,
+                dispatcher,
+              )
 
-              gcRoot.add(writeCallback)
+              gcRoot.add(data)
+
+              libcurl.curl_easy_setopt_writedata(
+                handle,
+                libcurl_const.CURLOPT_WRITEDATA,
+                toPtr(data),
+              )
+            }
+
+            throwOnError {
               libcurl.curl_easy_setopt_writefunction(
                 handle,
                 libcurl_const.CURLOPT_WRITEFUNCTION,
-                writeCallback,
+                writeCallback(_, _, _, _),
               )
             }
 
@@ -308,9 +261,153 @@ private[curl] object CurlClient {
           }
         }
 
-        readyResponse <- response.get.rethrow.toResource
+        readyResponse <- response.get.rethrow
+          .map(_.withBodyStream(responseBody).withTrailerHeaders(trailerHeaders.get.rethrow))
+          .toResource
       } yield readyResponse
     }
   }
+
+  final private case class ReadCallbackData(
+      requestBodyChunk: Ref[SyncIO, Option[ByteVector]],
+      requestBodyQueue: Queue[IO, Unit],
+      sendPause: Ref[SyncIO, Boolean],
+      dispatcher: Dispatcher[IO],
+  )
+
+  private def readCallback(
+      buffer: Ptr[CChar],
+      size: CSize,
+      nitems: CSize,
+      userdata: Ptr[Byte],
+  ): CSize = {
+    val data = fromPtr[ReadCallbackData](userdata)
+    import data._
+
+    requestBodyChunk
+      .modify {
+        case Some(bytes) =>
+          val (left, right) = bytes.splitAt((size * nitems).toLong)
+          (Some(right), Some(left))
+        case None => (None, None)
+      }
+      .unsafeRunSync() match {
+      case Some(bytes) if bytes.nonEmpty =>
+        bytes.copyToPtr(buffer, 0)
+        bytes.length.toULong
+      case Some(_) =>
+        dispatcher.unsafeRunAndForget(
+          sendPause.set(true).to[IO] *> requestBodyQueue.offer(())
+        )
+        libcurl_const.CURL_READFUNC_PAUSE.toULong
+      case None => 0.toULong
+    }
+  }
+
+  final private case class HeaderCallbackData(
+      response: Deferred[IO, Either[Throwable, Response[IO]]],
+      responseBuilder: Ref[IO, Option[Response[IO]]],
+      trailerHeaders: Deferred[IO, Either[Throwable, Headers]],
+      trailerHeadersBuilder: Ref[IO, Headers],
+      done: Deferred[IO, Either[Throwable, Unit]],
+      dispatcher: Dispatcher[IO],
+  )
+
+  private def headerCallback(
+      buffer: Ptr[CChar],
+      size: CSize,
+      nitems: CSize,
+      userdata: Ptr[Byte],
+  ): CSize = {
+    val data = fromPtr[HeaderCallbackData](userdata)
+    import data._
+
+    val decoded = ByteVector
+      .view(buffer, nitems.toLong)
+      .decodeAscii
+      .liftTo[IO]
+
+    def parseHeader(header: String): IO[Header.Raw] =
+      header.dropRight(2).split(": ") match {
+        case Array(name, value) => IO.pure(Header.Raw(CIString(name), value))
+        case _ => IO.raiseError(new RuntimeException("header_callback"))
+      }
+
+    val go = response.tryGet
+      .map(_.isEmpty)
+      .ifM(
+        // prelude
+        responseBuilder.get
+          .flatMap {
+            case None =>
+              decoded.map(_.split(' ')).flatMap {
+                case Array(v, c, _) =>
+                  for {
+                    version <- HttpVersion.fromString(v).liftTo[IO]
+                    status <- IO(c.toInt).flatMap(Status.fromInt(_).liftTo[IO])
+                    _ <- responseBuilder.set(Some(Response[IO](status, version)))
+                  } yield ()
+                case _ => IO.raiseError(new RuntimeException("header_callback"))
+              }
+            case Some(wipResponse) =>
+              decoded.flatMap {
+                case "\r\n" => response.complete(Right(wipResponse))
+                case header =>
+                  parseHeader(header)
+                    .flatMap(h => responseBuilder.set(Some(wipResponse.withHeaders(h))))
+              }
+          }
+          .onError(ex => response.complete(Left(ex)).void),
+
+        // trailers
+        done.tryGet
+          .flatMap {
+            case Some(result) =>
+              trailerHeadersBuilder.get
+                .flatMap(h => trailerHeaders.complete(result.as(h)))
+            case None =>
+              decoded.flatMap { header =>
+                parseHeader(header)
+                  .flatMap(h => trailerHeadersBuilder.update(_.put(h)))
+              }
+          }
+          .onError(ex => trailerHeaders.complete(Left(ex)).void),
+      )
+
+    dispatcher.unsafeRunAndForget(go)
+
+    size * nitems
+  }
+
+  final private case class WriteCallbackData(
+      recvPause: Ref[SyncIO, Boolean],
+      responseBodyQueue: Queue[IO, Option[ByteVector]],
+      dispatcher: Dispatcher[IO],
+  )
+
+  private def writeCallback(
+      buffer: Ptr[CChar],
+      size: CSize,
+      nmemb: CSize,
+      userdata: Ptr[Byte],
+  ): CSize = {
+    val data = fromPtr[WriteCallbackData](userdata)
+    import data._
+
+    if (recvPause.getAndSet(true).unsafeRunSync())
+      libcurl_const.CURL_WRITEFUNC_PAUSE.toULong
+    else {
+      dispatcher.unsafeRunAndForget(
+        responseBodyQueue.offer(Some(ByteVector.fromPtr(buffer, nmemb.toLong)))
+      )
+      size * nmemb
+    }
+  }
+
+  private def toPtr(a: AnyRef): Ptr[Byte] =
+    runtime.fromRawPtr(Intrinsics.castObjectToRawPtr(a))
+
+  private def fromPtr[A](ptr: Ptr[Byte]): A =
+    Intrinsics.castRawPtrToObject(runtime.toRawPtr(ptr)).asInstanceOf[A]
 
 }

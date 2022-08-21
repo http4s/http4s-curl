@@ -34,8 +34,11 @@ private[curl] object libcurl_const {
   final val CURLOPT_HTTPHEADER = CURLOPTTYPE_STRINGPOINT + 23
   final val CURLOPT_HTTP_VERSION = CURLOPTTYPE_LONG + 84
   final val CURLOPT_HEADERFUNCTION = CURLOPTTYPE_FUNCTIONPOINT + 79
+  final val CURLOPT_HEADERDATA = CURLOPTTYPE_OBJECTPOINT + 29
   final val CURLOPT_WRITEFUNCTION = CURLOPTTYPE_FUNCTIONPOINT + 11
+  final val CURLOPT_WRITEDATA = CURLOPTTYPE_OBJECTPOINT + 1
   final val CURLOPT_READFUNCTION = CURLOPTTYPE_FUNCTIONPOINT + 12
+  final val CURLOPT_READDATA = CURLOPTTYPE_OBJECTPOINT + 9
 
   final val CURL_HTTP_VERSION_NONE = 0L
   final val CURL_HTTP_VERSION_1_0 = 1L
@@ -148,6 +151,14 @@ private[curl] object libcurl {
     extern
 
   @name("curl_easy_setopt")
+  def curl_easy_setopt_headerdata(
+      curl: Ptr[CURL],
+      option: CURLOPT_HEADERDATA.type,
+      pointer: Ptr[Byte],
+  ): CURLcode =
+    extern
+
+  @name("curl_easy_setopt")
   def curl_easy_setopt_writefunction(
       curl: Ptr[CURL],
       option: CURLOPT_WRITEFUNCTION.type,
@@ -156,10 +167,26 @@ private[curl] object libcurl {
     extern
 
   @name("curl_easy_setopt")
+  def curl_easy_setopt_writedata(
+      curl: Ptr[CURL],
+      option: CURLOPT_WRITEDATA.type,
+      pointer: Ptr[Byte],
+  ): CURLcode =
+    extern
+
+  @name("curl_easy_setopt")
   def curl_easy_setopt_readfunction(
       curl: Ptr[CURL],
       option: CURLOPT_READFUNCTION.type,
       read_callback: read_callback,
+  ): CURLcode =
+    extern
+
+  @name("curl_easy_setopt")
+  def curl_easy_setopt_readdata(
+      curl: Ptr[CURL],
+      option: CURLOPT_READDATA.type,
+      pointer: Ptr[Byte],
   ): CURLcode =
     extern
 
