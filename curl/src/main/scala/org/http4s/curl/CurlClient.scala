@@ -354,7 +354,7 @@ private[curl] object CurlClient {
                 case "\r\n" => response.complete(Right(wipResponse))
                 case header =>
                   parseHeader(header)
-                    .flatMap(h => responseBuilder.set(Some(wipResponse.withHeaders(h))))
+                    .flatMap(h => responseBuilder.set(Some(wipResponse.putHeaders(h))))
               }
           }
           .onError(ex => response.complete(Left(ex)).void),
