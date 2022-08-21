@@ -32,12 +32,14 @@ private[curl] object libcurl {
   type CURLoption = CUnsignedInt
   final val CURLOPTTYPE_LONG = 0
   final val CURLOPTTYPE_OBJECTPOINT = 10000
+  final val CURLOPTTYPE_FUNCTIONPOINT = 20000
   final val CURLOPTTYPE_STRINGPOINT = CURLOPTTYPE_OBJECTPOINT
   final val CURLOPTTYPE_SLISTPOINT = CURLOPTTYPE_OBJECTPOINT
   final val CURLOPT_CUSTOMREQUEST = CURLOPTTYPE_OBJECTPOINT + 36
   final val CURLOPT_URL = CURLOPTTYPE_STRINGPOINT + 2
   final val CURLOPT_HTTPHEADER = CURLOPTTYPE_STRINGPOINT + 23
   final val CURLOPT_HTTP_VERSION = CURLOPTTYPE_LONG + 84
+  final val CURLOPT_HEADERFUNCTION = CURLOPTTYPE_FUNCTIONPOINT + 79
 
   final val CURL_HTTP_VERSION_NONE = 0L
   final val CURL_HTTP_VERSION_1_0 = 1L
@@ -46,6 +48,8 @@ private[curl] object libcurl {
   final val CURL_HTTP_VERSION_3 = 30L
 
   type curl_slist
+
+  type header_callback = CFuncPtr4[Ptr[CChar], CSize, CSize, Ptr[Byte], CSize]
 
   def curl_global_init(flags: CLongInt): CURLcode = extern
 
@@ -98,6 +102,14 @@ private[curl] object libcurl {
       curl: Ptr[CURL],
       option: CURLOPT_HTTP_VERSION.type,
       version: CLong,
+  ): CURLcode =
+    extern
+
+  @name("curl_easy_setopt")
+  def curl_easy_setopt_headerfunction(
+      curl: Ptr[CURL],
+      option: CURLOPT_HEADERFUNCTION.type,
+      header_callback: header_callback,
   ): CURLcode =
     extern
 
