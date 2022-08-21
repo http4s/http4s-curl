@@ -49,7 +49,8 @@ final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM])
       throw new RuntimeException(s"curl_multi_perform: $performCode")
 
     while ({
-      val info = libcurl.curl_multi_info_read(multiHandle, null)
+      val msgsInQueue = stackalloc[CInt]()
+      val info = libcurl.curl_multi_info_read(multiHandle, msgsInQueue)
       if (info != null) {
         if (info._1 == libcurl_const.CURLMSG_DONE) {
           callbacks.remove(info._2).foreach { cb =>
