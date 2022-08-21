@@ -82,7 +82,7 @@ private[curl] object CurlExecutorScheduler {
 
   def apply(): (CurlExecutorScheduler, () => Unit) = {
     val initCode = libcurl.curl_global_init(0)
-    if (initCode == 0)
+    if (initCode != 0)
       throw new RuntimeException(s"curl_global_init: $initCode")
 
     val multiHandle = libcurl.curl_multi_init()
