@@ -23,7 +23,7 @@ import scala.scalanative.unsigned._
 import libcurl_const._
 
 private[curl] object libcurl_const {
-  final val CURLMSG_DONE = 1.toUInt
+  final val CURLMSG_DONE: UInt = 1.toUInt
 
   final val CURLOPTTYPE_LONG = 0
   final val CURLOPTTYPE_OBJECTPOINT = 10000

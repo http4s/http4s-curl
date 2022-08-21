@@ -17,14 +17,14 @@
 package example
 
 import cats.effect._
+import cats.syntax.all._
 import io.circe._
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.curl.CurlApp
-import cats.syntax.all._
 
 object ExampleApp extends CurlApp.Simple {
 
-  case class Joke(joke: String)
+  final case class Joke(joke: String)
   object Joke {
     implicit val decoder: Decoder[Joke] = Decoder.forProduct1("joke")(Joke(_))
   }
