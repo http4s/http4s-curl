@@ -28,3 +28,8 @@ lazy val example = project
   .in(file("example"))
   .enablePlugins(ScalaNativePlugin, NoPublishPlugin)
   .dependsOn(curl)
+  .settings(
+    libraryDependencies ++= Seq(
+      "com.armanbilge" %%% "http4s-circe" % http4sVersion
+    )
+  )
