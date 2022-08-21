@@ -18,11 +18,12 @@ package org.http4s.curl.unsafe
 
 import scala.annotation.nowarn
 import scala.scalanative.unsafe._
+import scala.scalanative.unsigned._
 
 import libcurl_const._
 
 private[curl] object libcurl_const {
-  final val CURLMSG_DONE = 1L
+  final val CURLMSG_DONE = 1.toUInt
 
   final val CURLOPTTYPE_LONG = 0
   final val CURLOPTTYPE_OBJECTPOINT = 10000
@@ -71,7 +72,7 @@ private[curl] object libcurl {
   type CURLMcode = CInt
 
   type CURLMSG = CUnsignedInt
-  type CURLMsg = CStruct3[CURLMSG, Ptr[CURL], CURLcode]
+  type CURLMsg
 
   type CURLoption = CUnsignedInt
 
@@ -103,6 +104,15 @@ private[curl] object libcurl {
 
   def curl_multi_info_read(multi_handle: Ptr[CURLM], msgs_in_queue: Ptr[CInt]): Ptr[CURLMsg] =
     extern
+
+  @name("org_http4s_curl_CURLMsg_msg")
+  def curl_CURLMsg_msg(curlMsg: Ptr[CURLMsg]): CURLMSG = extern
+
+  @name("org_http4s_curl_CURLMsg_easy_handle")
+  def curl_CURLMsg_easy_handle(curlMsg: Ptr[CURLMsg]): Ptr[CURL] = extern
+
+  @name("org_http4s_curl_CURLMsg_data_result")
+  def curl_CURLMsg_data_result(curlMsg: Ptr[CURLMsg]): CURLcode = extern
 
   def curl_multi_add_handle(multi_handle: Ptr[CURLM], curl_handle: Ptr[CURL]): CURLMcode = extern
 
