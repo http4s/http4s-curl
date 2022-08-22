@@ -148,6 +148,14 @@ private[curl] object CurlClient {
             )
 
             throwOnError(
+              libcurl.curl_easy_setopt_upload(
+                handle,
+                libcurl_const.CURLOPT_UPLOAD,
+                1,
+              )
+            )
+
+            throwOnError(
               libcurl.curl_easy_setopt_url(
                 handle,
                 libcurl_const.CURLOPT_URL,

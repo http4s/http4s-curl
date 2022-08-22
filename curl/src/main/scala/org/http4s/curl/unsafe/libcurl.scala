@@ -40,6 +40,7 @@ private[curl] object libcurl_const {
   final val CURLOPT_WRITEDATA = CURLOPTTYPE_OBJECTPOINT + 1
   final val CURLOPT_READFUNCTION = CURLOPTTYPE_FUNCTIONPOINT + 12
   final val CURLOPT_READDATA = CURLOPTTYPE_OBJECTPOINT + 9
+  final val CURLOPT_UPLOAD = CURLOPTTYPE_LONG + 46
 
   final val CURL_HTTP_VERSION_NONE = 0L
   final val CURL_HTTP_VERSION_1_0 = 1L
@@ -197,6 +198,14 @@ private[curl] object libcurl {
       curl: Ptr[CURL],
       option: CURLOPT_READDATA.type,
       pointer: Ptr[Byte],
+  ): CURLcode =
+    extern
+
+  @name("curl_easy_setopt")
+  def curl_easy_setopt_upload(
+      curl: Ptr[CURL],
+      option: CURLOPT_UPLOAD.type,
+      upload: CLong,
   ): CURLcode =
     extern
 
