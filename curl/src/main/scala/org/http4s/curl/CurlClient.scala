@@ -95,6 +95,7 @@ private[curl] object CurlClient {
         unpauseSend = sendPause.set(false).to[IO] *>
           recvPause.get.to[IO].flatMap { p =>
             IO {
+              println(s"unpausing send, recv paused: $p")
               val code = libcurl.curl_easy_pause(
                 handle,
                 if (p) libcurl_const.CURLPAUSE_RECV else libcurl_const.CURLPAUSE_RECV_CONT,
@@ -315,6 +316,9 @@ private[curl] object CurlClient {
         case None => (None, None)
       }
       .unsafeRunSync() match {
+      case _ => 
+        println("cheated")
+        0.toULong
       case Some(bytes) if bytes.nonEmpty =>
         bytes.copyToPtr(buffer, 0)
         bytes.length.toULong
@@ -322,6 +326,7 @@ private[curl] object CurlClient {
         dispatcher.unsafeRunAndForget(
           sendPause.set(true).to[IO] *> requestBodyQueue.offer(())
         )
+        println("pause")
         libcurl_const.CURL_READFUNC_PAUSE.toULong
       case None => 
         println("done")
@@ -351,6 +356,7 @@ private[curl] object CurlClient {
       .view(buffer, nitems.toLong)
       .decodeAscii
       .liftTo[IO]
+      .flatTap(IO.println)
 
     def parseHeader(header: String): IO[Header.Raw] =
       header.dropRight(2).split(": ") match {

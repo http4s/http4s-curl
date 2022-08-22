@@ -84,8 +84,8 @@ class CurlClientSuite extends CatsEffectSuite {
       client
         .run(
           Request[IO](POST, uri = uri"http://0.0.0.0:8000")
-            .withEntity(Stream.emit[IO, String]("what"))
-            // .withEntity("what")
+            .withEntity[Stream[IO, String]](Stream.empty)
+            // .withEntity("")
         ).use(IO.println)
         .parReplicateA_(1)
     }
