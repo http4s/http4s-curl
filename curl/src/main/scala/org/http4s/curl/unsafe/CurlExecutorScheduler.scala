@@ -53,6 +53,8 @@ final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM])
     if (performCode != 0)
       throw new RuntimeException(s"curl_multi_perform: $performCode")
 
+    println(s"running handles ${!runningHandles}")
+
     while ({
       val msgsInQueue = stackalloc[CInt]()
       val info = libcurl.curl_multi_info_read(multiHandle, msgsInQueue)
