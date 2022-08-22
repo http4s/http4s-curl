@@ -179,7 +179,7 @@ private[curl] object CurlClient {
             )
 
             var headers: Ptr[libcurl.curl_slist] = null
-            req.headers
+            req.headers // curl adds these headers automatically, so we explicitly disable them
               .transform(Header.Raw(ci"Expect", "") :: Header.Raw(ci"Transfer-Encoding", "") :: _)
               .foreach { header =>
                 headers = libcurl.curl_slist_append(headers, toCString(header.toString))
