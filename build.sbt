@@ -6,7 +6,8 @@ ThisBuild / developers := List(
 ThisBuild / startYear := Some(2022)
 
 ThisBuild / crossScalaVersions := Seq("3.1.3", "2.13.8")
-ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("8"))
+ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
+ThisBuild / tlJdkRelease := Some(8)
 
 ThisBuild / githubWorkflowBuildPreamble +=
   WorkflowStep.Run(
