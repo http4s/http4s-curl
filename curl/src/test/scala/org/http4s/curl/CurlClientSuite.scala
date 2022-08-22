@@ -22,8 +22,11 @@ import cats.effect.kernel.Resource
 import cats.effect.unsafe.IORuntime
 import cats.syntax.all._
 import munit.CatsEffectSuite
+import org.http4s.Method._
+import org.http4s.Request
 import org.http4s.client.Client
 import org.http4s.curl.unsafe.CurlRuntime
+import org.http4s.syntax.all._
 
 class CurlClientSuite extends CatsEffectSuite {
 
@@ -33,12 +36,27 @@ class CurlClientSuite extends CatsEffectSuite {
     Resource.eval(CurlClient.get)
   )
 
-  clientFixture.test("get 3 jokes") { client =>
+  clientFixture.test("3 get echos") { client =>
     client
-      .expect[String]("https://icanhazdadjoke.com/")
-      .parReplicateA(3)
-      .map(_.forall(_.nonEmpty))
+      .expect[String]("https://postman-echo.com/get")
+      .map(_.nonEmpty)
       .assert
+      .parReplicateA_(3)
+  }
+
+  clientFixture.test("3 post echos") { client =>
+    IO.randomUUID
+      .flatMap { uuid =>
+        val msg = s"hello postman $uuid"
+        client
+          .expect[String](
+            Request[IO](POST, uri = uri"https://postman-echo.com/post").withEntity(msg)
+          )
+          .map(_.contains(msg))
+          .assert
+      }
+      .parReplicateA_(3)
+
   }
 
 }
