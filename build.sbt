@@ -8,6 +8,11 @@ ThisBuild / startYear := Some(2022)
 ThisBuild / crossScalaVersions := Seq("3.1.3", "2.13.8")
 ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("8"))
 
+ThisBuild / githubWorkflowBuildPreamble +=
+  WorkflowStep.Run(
+    List("sudo apt-get update", "sudo apt-get install libcurl4-openssl-dev"),
+    name = Some("Install libcurl"),
+  )
 ThisBuild / githubWorkflowBuildPostamble ~= {
   _.filterNot(_.name.contains("Check unused compile dependencies"))
 }
