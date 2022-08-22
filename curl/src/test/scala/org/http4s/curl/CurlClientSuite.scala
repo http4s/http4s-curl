@@ -27,6 +27,9 @@ import org.http4s.Request
 import org.http4s.client.Client
 import org.http4s.curl.unsafe.CurlRuntime
 import org.http4s.syntax.all._
+import cats.effect.std.Random
+import fs2.Stream
+import scala.concurrent.duration._
 
 class CurlClientSuite extends CatsEffectSuite {
 
@@ -44,6 +47,14 @@ class CurlClientSuite extends CatsEffectSuite {
       .parReplicateA_(3)
   }
 
+  clientFixture.test("3 streaming gets") { client =>
+    client
+      .expect[String]("https://httpbin.org/drip")
+      .map(_.nonEmpty)
+      .assert
+      .parReplicateA_(3)
+  }
+
   clientFixture.test("3 post echos") { client =>
     IO.randomUUID
       .flatMap { uuid =>
@@ -56,6 +67,28 @@ class CurlClientSuite extends CatsEffectSuite {
           .assert
       }
       .parReplicateA_(3)
+  }
+
+  clientFixture.test("10 concurrent chunked post echos".only) { client =>
+    Random.scalaUtilRandom[IO].flatMap { random =>
+      val entity = Stream.eval(random.nextLongBounded(100)).flatMap { count =>
+        Stream
+          .repeatEval {
+            random.nextIntBounded(100).flatMap { delay =>
+              random.nextIntBounded(100).flatMap(random.nextString).delayBy(delay.millis)
+            }
+          }
+          .take(count)
+      }
+
+      client
+        .run(
+          Request[IO](POST, uri = uri"http://0.0.0.0:8000")
+            .withEntity(Stream.emit[IO, String]("what"))
+            // .withEntity("what")
+        ).use(IO.println)
+        .parReplicateA_(1)
+    }
 
   }
 

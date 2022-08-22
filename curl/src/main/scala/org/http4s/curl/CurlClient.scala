@@ -140,6 +140,14 @@ private[curl] object CurlClient {
             }
 
             throwOnError(
+              libcurl.curl_easy_setopt_verbose(
+                handle,
+                libcurl_const.CURLOPT_VERBOSE,
+                1
+              )
+            )
+
+            throwOnError(
               libcurl.curl_easy_setopt_customrequest(
                 handle,
                 libcurl_const.CURLOPT_CUSTOMREQUEST,
@@ -315,7 +323,9 @@ private[curl] object CurlClient {
           sendPause.set(true).to[IO] *> requestBodyQueue.offer(())
         )
         libcurl_const.CURL_READFUNC_PAUSE.toULong
-      case None => 0.toULong
+      case None => 
+        println("done")
+        0.toULong
     }
   }
 
