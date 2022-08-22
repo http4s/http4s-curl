@@ -30,12 +30,17 @@ final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM])
 
   def poll(timeout: Duration): Boolean = {
 
+    val timeoutMillis = timeout match {
+      case Duration.Inf => Int.MaxValue
+      case timeout => timeout.toMillis.min(Int.MaxValue).toInt
+    }
+
     if (timeout > Duration.Zero) {
       val pollCode = libcurl.curl_multi_poll(
         multiHandle,
         null,
         0.toUInt,
-        timeout.toMillis.min(Int.MaxValue).toInt,
+        timeoutMillis,
         null,
       )
 
