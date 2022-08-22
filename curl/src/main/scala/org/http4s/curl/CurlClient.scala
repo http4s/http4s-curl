@@ -36,7 +36,7 @@ import org.http4s.client.Client
 import org.http4s.curl.unsafe.CurlExecutorScheduler
 import org.http4s.curl.unsafe.libcurl
 import org.http4s.curl.unsafe.libcurl_const
-import org.typelevel.ci.CIString
+import org.typelevel.ci._
 import scodec.bits.ByteVector
 
 import java.util.Collections
@@ -148,6 +148,14 @@ private[curl] object CurlClient {
             )
 
             throwOnError(
+              libcurl.curl_easy_setopt_upload(
+                handle,
+                libcurl_const.CURLOPT_UPLOAD,
+                1,
+              )
+            )
+
+            throwOnError(
               libcurl.curl_easy_setopt_url(
                 handle,
                 libcurl_const.CURLOPT_URL,
@@ -171,9 +179,11 @@ private[curl] object CurlClient {
             )
 
             var headers: Ptr[libcurl.curl_slist] = null
-            req.headers.foreach { header =>
-              headers = libcurl.curl_slist_append(headers, toCString(header.toString))
-            }
+            req.headers // curl adds these headers automatically, so we explicitly disable them
+              .transform(Header.Raw(ci"Expect", "") :: Header.Raw(ci"Transfer-Encoding", "") :: _)
+              .foreach { header =>
+                headers = libcurl.curl_slist_append(headers, toCString(header.toString))
+              }
             throwOnError(
               libcurl.curl_easy_setopt_httpheader(handle, libcurl_const.CURLOPT_HTTPHEADER, headers)
             )
@@ -346,7 +356,7 @@ private[curl] object CurlClient {
           .flatMap {
             case None =>
               decoded.map(_.split(' ')).flatMap {
-                case Array(v, c, _) =>
+                case Array(v, c, _*) =>
                   for {
                     version <- HttpVersion.fromString(v).liftTo[IO]
                     status <- IO(c.toInt).flatMap(Status.fromInt(_).liftTo[IO])
