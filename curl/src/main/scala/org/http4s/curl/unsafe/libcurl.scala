@@ -72,7 +72,7 @@ private[curl] object libcurl {
   type CURLMcode = CInt
 
   type CURLMSG = CUnsignedInt
-  type CURLMsg
+  type CURLMsg = CStruct3[CURLMSG, Ptr[CURL], CURLcode]
 
   type CURLoption = CUnsignedInt
 
@@ -104,15 +104,6 @@ private[curl] object libcurl {
 
   def curl_multi_info_read(multi_handle: Ptr[CURLM], msgs_in_queue: Ptr[CInt]): Ptr[CURLMsg] =
     extern
-
-  @name("org_http4s_curl_CURLMsg_msg")
-  def curl_CURLMsg_msg(curlMsg: Ptr[CURLMsg]): CURLMSG = extern
-
-  @name("org_http4s_curl_CURLMsg_easy_handle")
-  def curl_CURLMsg_easy_handle(curlMsg: Ptr[CURLMsg]): Ptr[CURL] = extern
-
-  @name("org_http4s_curl_CURLMsg_data_result")
-  def curl_CURLMsg_data_result(curlMsg: Ptr[CURLMsg]): CURLcode = extern
 
   def curl_multi_add_handle(multi_handle: Ptr[CURLM], curl_handle: Ptr[CURL]): CURLMcode = extern
 

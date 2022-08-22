@@ -57,17 +57,15 @@ final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM])
       val msgsInQueue = stackalloc[CInt]()
       val info = libcurl.curl_multi_info_read(multiHandle, msgsInQueue)
       if (info != null) {
-        if (libcurl.curl_CURLMsg_msg(info) == libcurl_const.CURLMSG_DONE) {
-          val handle = libcurl.curl_CURLMsg_easy_handle(info)
-          callbacks.remove(handle).foreach { cb =>
-            val result = libcurl.curl_CURLMsg_data_result(info)
+        if (info._1 == libcurl_const.CURLMSG_DONE) {
+          callbacks.remove(info._2).foreach { cb =>
             cb(
-              if (result == 0) Right(())
-              else Left(new RuntimeException(s"curl_multi_info_read: $result"))
+              if (info._3 == 0) Right(())
+              else Left(new RuntimeException(s"curl_multi_info_read: ${info._3}"))
             )
           }
 
-          val code = libcurl.curl_multi_remove_handle(multiHandle, handle)
+          val code = libcurl.curl_multi_remove_handle(multiHandle, info._2)
           if (code != 0)
             throw new RuntimeException(s"curl_multi_remove_handle: $code")
         }
