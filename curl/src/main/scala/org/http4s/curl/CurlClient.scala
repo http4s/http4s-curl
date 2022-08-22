@@ -48,6 +48,11 @@ import scala.scalanative.unsigned._
 
 private[curl] object CurlClient {
 
+  def get: IO[Client[IO]] = IO.executionContext.flatMap {
+    case ec: CurlExecutorScheduler => IO.pure(apply(ec))
+    case _ => throw new RuntimeException("Not running on CurlExecutorScheduler")
+  }
+
   def apply(ec: CurlExecutorScheduler): Client[IO] = Client { req =>
     Resource.make(IO(Zone.open()))(z => IO(z.close())).flatMap { implicit z =>
       for {
