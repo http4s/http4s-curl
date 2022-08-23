@@ -10,6 +10,11 @@ ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
 ThisBuild / githubWorkflowOSes += "macos-latest"
 ThisBuild / tlJdkRelease := Some(8)
 
+ThisBuild / githubWorkflowEnv ++=
+  Map(
+    "CPPFLAGS" -> "-I/usr/local/opt/curl/include",
+    "LDFLAGS" -> "-L/usr/local/opt/curl/lib",
+  )
 ThisBuild / githubWorkflowBuildPreamble ++= Seq(
   WorkflowStep.Run(
     List("sudo apt-get update", "sudo apt-get install libcurl4-openssl-dev"),
