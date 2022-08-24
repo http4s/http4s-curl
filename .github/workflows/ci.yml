@@ -15,13 +15,11 @@ on:
     tags: [v*]
 
 env:
-  LDFLAGS: '-L/opt/homebrew/opt/curl/lib'
   PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
   SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
   SONATYPE_CREDENTIAL_HOST: ${{ secrets.SONATYPE_CREDENTIAL_HOST }}
   SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
   PGP_SECRET: ${{ secrets.PGP_SECRET }}
-  CPPFLAGS: '-I/opt/homebrew/opt/curl/include'
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
