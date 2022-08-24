@@ -36,6 +36,11 @@ class CurlClientSuite extends CatsEffectSuite {
     Resource.eval(CurlClient.get)
   )
 
+  test("curl version") {
+    val prefix = "libcurl/7."
+    assertEquals(CurlRuntime.curlVersion.take(prefix.length), prefix)
+  }
+
   clientFixture.test("3 get echos") { client =>
     client
       .expect[String]("https://postman-echo.com/get")

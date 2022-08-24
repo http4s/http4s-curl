@@ -21,6 +21,7 @@ import cats.effect.unsafe.IORuntimeConfig
 import cats.effect.unsafe.Scheduler
 
 import scala.concurrent.ExecutionContext
+import scala.scalanative.unsafe._
 
 object CurlRuntime {
 
@@ -35,5 +36,7 @@ object CurlRuntime {
     val (ecScheduler, shutdown) = CurlExecutorScheduler()
     (ecScheduler, shutdown)
   }
+
+  def curlVersion: String = fromCString(libcurl.curl_version())
 
 }

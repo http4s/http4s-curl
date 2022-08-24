@@ -85,6 +85,8 @@ private[curl] object libcurl {
 
   type read_callback = CFuncPtr4[Ptr[CChar], CSize, CSize, Ptr[Byte], CSize]
 
+  def curl_version(): Ptr[CChar] = extern
+
   def curl_global_init(flags: CLongInt): CURLcode = extern
 
   def curl_global_cleanup(): Unit = extern
