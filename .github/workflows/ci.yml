@@ -72,10 +72,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install libcurl4-openssl-dev
 
-      - name: Install libcurl
-        if: matrix.os == 'macos-latest'
-        run: brew install curl
-
       - name: Check that workflows are up to date
         run: sbt '++${{ matrix.scala }}' 'project /' githubWorkflowCheck
 

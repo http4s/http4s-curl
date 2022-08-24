@@ -10,18 +10,12 @@ ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
 ThisBuild / githubWorkflowOSes += "macos-latest"
 ThisBuild / tlJdkRelease := Some(8)
 
-ThisBuild / githubWorkflowBuildPreamble ++= Seq(
+ThisBuild / githubWorkflowBuildPreamble +=
   WorkflowStep.Run(
     List("sudo apt-get update", "sudo apt-get install libcurl4-openssl-dev"),
     name = Some("Install libcurl"),
     cond = Some("matrix.os == 'ubuntu-latest'"),
-  ),
-  WorkflowStep.Run(
-    List("brew install curl"),
-    name = Some("Install libcurl"),
-    cond = Some("matrix.os == 'macos-latest'"),
-  ),
-)
+  )
 ThisBuild / githubWorkflowBuildPostamble ~= {
   _.filterNot(_.name.contains("Check unused compile dependencies"))
 }
