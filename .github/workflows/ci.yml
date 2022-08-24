@@ -71,7 +71,7 @@ jobs:
           key: ${{ runner.os }}-sbt-cache-v2-${{ hashFiles('**/*.sbt') }}-${{ hashFiles('project/build.properties') }}
 
       - name: Install libcurl
-        if: startsWith(matrix.os, 'ubuntu-latest')
+        if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
           sudo apt-get install libcurl4-openssl-dev

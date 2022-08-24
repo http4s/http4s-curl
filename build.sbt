@@ -15,7 +15,7 @@ ThisBuild / githubWorkflowBuildPreamble +=
   WorkflowStep.Run(
     List("sudo apt-get update", "sudo apt-get install libcurl4-openssl-dev"),
     name = Some("Install libcurl"),
-    cond = Some("startsWith(matrix.os, 'ubuntu-latest')"),
+    cond = Some("startsWith(matrix.os, 'ubuntu')"),
   )
 ThisBuild / githubWorkflowBuildPostamble ~= {
   _.filterNot(_.name.contains("Check unused compile dependencies"))
