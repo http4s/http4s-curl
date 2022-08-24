@@ -7,14 +7,15 @@ ThisBuild / startYear := Some(2022)
 
 ThisBuild / crossScalaVersions := Seq("3.1.3", "2.13.8")
 ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
-ThisBuild / githubWorkflowOSes += "macos-latest"
 ThisBuild / tlJdkRelease := Some(8)
+ThisBuild / githubWorkflowOSes :=
+  Seq("ubuntu-20.04", "ubuntu-22.04", "macos-11", "macos-12")
 
 ThisBuild / githubWorkflowBuildPreamble +=
   WorkflowStep.Run(
     List("sudo apt-get update", "sudo apt-get install libcurl4-openssl-dev"),
     name = Some("Install libcurl"),
-    cond = Some("matrix.os == 'ubuntu-latest'"),
+    cond = Some("startsWith(matrix.os, 'ubuntu-latest')"),
   )
 ThisBuild / githubWorkflowBuildPostamble ~= {
   _.filterNot(_.name.contains("Check unused compile dependencies"))
@@ -23,6 +24,14 @@ ThisBuild / githubWorkflowBuildPostamble ~= {
 val http4sVersion = "0.23.14-101-02562a0-SNAPSHOT"
 val munitCEVersion = "2.0-4e051ab-SNAPSHOT"
 ThisBuild / resolvers ++= Resolver.sonatypeOssRepos("snapshots")
+
+ThisBuild / nativeConfig ~= { c =>
+  val osName = Option(System.getProperty("os.name"))
+  val isMacOs = osName.exists(_.toLowerCase().contains("mac"))
+  if (isMacOs) { // brew-installed curl
+    c.withLinkingOptions(c.linkingOptions :+ "-L/usr/local/opt/curl/lib")
+  } else c
+}
 
 lazy val root = project.in(file(".")).enablePlugins(NoPublishPlugin).aggregate(curl, example)
 

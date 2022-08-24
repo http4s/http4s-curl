@@ -50,7 +50,7 @@ private[curl] object CurlClient {
 
   def get: IO[Client[IO]] = IO.executionContext.flatMap {
     case ec: CurlExecutorScheduler => IO.pure(apply(ec))
-    case _ => throw new RuntimeException("Not running on CurlExecutorScheduler")
+    case _ => IO.raiseError(new RuntimeException("Not running on CurlExecutorScheduler"))
   }
 
   def apply(ec: CurlExecutorScheduler): Client[IO] = Client { req =>
@@ -80,17 +80,22 @@ private[curl] object CurlClient {
         recvPause <- Ref[SyncIO].of(false).to[IO].toResource
         sendPause <- Ref[SyncIO].of(false).to[IO].toResource
 
-        unpauseRecv = recvPause.set(false).to[IO] *>
-          sendPause.get.to[IO].flatMap { p =>
-            IO {
-              val code = libcurl.curl_easy_pause(
-                handle,
-                if (p) libcurl_const.CURLPAUSE_SEND else libcurl_const.CURLPAUSE_SEND_CONT,
-              )
-              if (code != 0)
-                throw new RuntimeException(s"curl_easy_pause: $code")
-            }
-          }
+        unpauseRecv = recvPause
+          .getAndSet(false)
+          .to[IO]
+          .ifM( // needs unpause
+            sendPause.get.to[IO].flatMap { p =>
+              IO {
+                val code = libcurl.curl_easy_pause(
+                  handle,
+                  if (p) libcurl_const.CURLPAUSE_SEND else libcurl_const.CURLPAUSE_SEND_CONT,
+                )
+                if (code != 0)
+                  throw new RuntimeException(s"curl_easy_pause: $code")
+              }
+            },
+            IO.unit, // already unpaused
+          )
 
         unpauseSend = sendPause.set(false).to[IO] *>
           recvPause.get.to[IO].flatMap { p =>
@@ -116,9 +121,16 @@ private[curl] object CurlClient {
           .drain
           .background
 
+        responseBodyQueueReady <- Ref[SyncIO].of(false).to[IO].toResource
         responseBodyQueue <- Queue.synchronous[IO, Option[ByteVector]].toResource
         responseBody = Stream
-          .repeatEval(unpauseRecv *> responseBodyQueue.take)
+          .repeatEval(
+            // sequencing is important! the docs for `curl_easy_pause` say:
+            // > When this function is called to unpause receiving,
+            // > the chance is high that you will get your write callback called before this function returns.
+            // so it's important to indicate that the queue is ready before unpausing recv
+            responseBodyQueueReady.set(true).to[IO] *> unpauseRecv *> responseBodyQueue.take
+          )
           .unNoneTerminate
           .map(Chunk.byteVector(_))
           .unchunks
@@ -243,6 +255,7 @@ private[curl] object CurlClient {
             throwOnError {
               val data = WriteCallbackData(
                 recvPause,
+                responseBodyQueueReady,
                 responseBodyQueue,
                 dispatcher,
               )
@@ -396,6 +409,7 @@ private[curl] object CurlClient {
 
   final private case class WriteCallbackData(
       recvPause: Ref[SyncIO, Boolean],
+      responseBodyQueueReady: Ref[SyncIO, Boolean],
       responseBodyQueue: Queue[IO, Option[ByteVector]],
       dispatcher: Dispatcher[IO],
   )
@@ -409,13 +423,15 @@ private[curl] object CurlClient {
     val data = fromPtr[WriteCallbackData](userdata)
     import data._
 
-    if (recvPause.getAndSet(true).unsafeRunSync())
-      libcurl_const.CURL_WRITEFUNC_PAUSE.toULong
-    else {
+    if (responseBodyQueueReady.get.unsafeRunSync()) {
+      responseBodyQueueReady.set(false)
       dispatcher.unsafeRunAndForget(
         responseBodyQueue.offer(Some(ByteVector.fromPtr(buffer, nmemb.toLong)))
       )
       size * nmemb
+    } else {
+      recvPause.set(true).unsafeRunSync()
+      libcurl_const.CURL_WRITEFUNC_PAUSE.toULong
     }
   }
 
