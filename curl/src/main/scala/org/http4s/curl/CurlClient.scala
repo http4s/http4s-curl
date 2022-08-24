@@ -50,7 +50,7 @@ private[curl] object CurlClient {
 
   def get: IO[Client[IO]] = IO.executionContext.flatMap {
     case ec: CurlExecutorScheduler => IO.pure(apply(ec))
-    case _ => throw new RuntimeException("Not running on CurlExecutorScheduler")
+    case _ => IO.raiseError(new RuntimeException("Not running on CurlExecutorScheduler"))
   }
 
   def apply(ec: CurlExecutorScheduler): Client[IO] = Client { req =>
@@ -80,17 +80,22 @@ private[curl] object CurlClient {
         recvPause <- Ref[SyncIO].of(false).to[IO].toResource
         sendPause <- Ref[SyncIO].of(false).to[IO].toResource
 
-        unpauseRecv = recvPause.set(false).to[IO] *>
-          sendPause.get.to[IO].flatMap { p =>
-            IO {
-              val code = libcurl.curl_easy_pause(
-                handle,
-                if (p) libcurl_const.CURLPAUSE_SEND else libcurl_const.CURLPAUSE_SEND_CONT,
-              )
-              if (code != 0)
-                throw new RuntimeException(s"curl_easy_pause: $code")
-            }
-          }
+        unpauseRecv = recvPause
+          .getAndSet(false)
+          .to[IO]
+          .ifM( // needs unpause
+            sendPause.get.to[IO].flatMap { p =>
+              IO {
+                val code = libcurl.curl_easy_pause(
+                  handle,
+                  if (p) libcurl_const.CURLPAUSE_SEND else libcurl_const.CURLPAUSE_SEND_CONT,
+                )
+                if (code != 0)
+                  throw new RuntimeException(s"curl_easy_pause: $code")
+              }
+            },
+            IO.unit, // already unpaused
+          )
 
         unpauseSend = sendPause.set(false).to[IO] *>
           recvPause.get.to[IO].flatMap { p =>
