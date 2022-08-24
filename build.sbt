@@ -12,8 +12,8 @@ ThisBuild / tlJdkRelease := Some(8)
 
 ThisBuild / githubWorkflowEnv ++=
   Map(
-    "CPPFLAGS" -> "-I/usr/local/opt/curl/include",
-    "LDFLAGS" -> "-L/usr/local/opt/curl/lib",
+    "CPPFLAGS" -> "-I/opt/homebrew/opt/curl/include",
+    "LDFLAGS" -> "-L/opt/homebrew/opt/curl/lib",
   )
 ThisBuild / githubWorkflowBuildPreamble ++= Seq(
   WorkflowStep.Run(
