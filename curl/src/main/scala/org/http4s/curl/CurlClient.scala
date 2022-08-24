@@ -121,9 +121,12 @@ private[curl] object CurlClient {
           .drain
           .background
 
+        responseBodyQueueReady <- Ref[SyncIO].of(false).to[IO].toResource
         responseBodyQueue <- Queue.synchronous[IO, Option[ByteVector]].toResource
         responseBody = Stream
-          .repeatEval(unpauseRecv *> responseBodyQueue.take)
+          .repeatEval(
+            unpauseRecv *> responseBodyQueue.take <* responseBodyQueueReady.set(true).to[IO]
+          )
           .unNoneTerminate
           .map(Chunk.byteVector(_))
           .unchunks
@@ -248,6 +251,7 @@ private[curl] object CurlClient {
             throwOnError {
               val data = WriteCallbackData(
                 recvPause,
+                responseBodyQueueReady,
                 responseBodyQueue,
                 dispatcher,
               )
@@ -401,6 +405,7 @@ private[curl] object CurlClient {
 
   final private case class WriteCallbackData(
       recvPause: Ref[SyncIO, Boolean],
+      responseBodyQueueReady: Ref[SyncIO, Boolean],
       responseBodyQueue: Queue[IO, Option[ByteVector]],
       dispatcher: Dispatcher[IO],
   )
@@ -414,13 +419,15 @@ private[curl] object CurlClient {
     val data = fromPtr[WriteCallbackData](userdata)
     import data._
 
-    if (recvPause.getAndSet(true).unsafeRunSync())
-      libcurl_const.CURL_WRITEFUNC_PAUSE.toULong
-    else {
+    if (responseBodyQueueReady.get.unsafeRunSync()) {
+      responseBodyQueueReady.set(false)
       dispatcher.unsafeRunAndForget(
         responseBodyQueue.offer(Some(ByteVector.fromPtr(buffer, nmemb.toLong)))
       )
       size * nmemb
+    } else {
+      recvPause.set(true).unsafeRunSync()
+      libcurl_const.CURL_WRITEFUNC_PAUSE.toULong
     }
   }
 
