@@ -125,7 +125,11 @@ private[curl] object CurlClient {
         responseBodyQueue <- Queue.synchronous[IO, Option[ByteVector]].toResource
         responseBody = Stream
           .repeatEval(
-            unpauseRecv *> responseBodyQueue.take <* responseBodyQueueReady.set(true).to[IO]
+            // sequencing is important! the docs for `curl_easy_pause` say:
+            // > When this function is called to unpause receiving,
+            // > the chance is high that you will get your write callback called before this function returns.
+            // so it's important to indicate that the queue is ready before unpausing recv
+            responseBodyQueueReady.set(true).to[IO] *> unpauseRecv *> responseBodyQueue.take
           )
           .unNoneTerminate
           .map(Chunk.byteVector(_))
