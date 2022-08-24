@@ -46,14 +46,3 @@ lazy val example = project
       "com.armanbilge" %%% "http4s-circe" % http4sVersion
     )
   )
-
-lazy val nativeSettings = {
-  val macOS = Option(System.getProperty("os.name")).exists(_.startsWith("Mac"))
-  if (macOS)
-    Seq( // point to brew-installed curl
-      nativeCompileOptions += "-I/usr/local/opt/curl/include",
-      nativeLinkingOptions += "-L/usr/local/opt/curl/lib",
-    )
-  else
-    Nil
-}
