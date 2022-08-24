@@ -11,7 +11,7 @@ Please try it and contribute bug reports and fixes! Snapshots are available [her
 ```scala
 resolvers ++= Resolver.sonatypeOssRepos("snapshots")
 libraryDependencies ++= Seq(
-  "org.http4s" %%% "http4s-curl" % "0.0-932238f-SNAPSHOT" // or latest commit
+  "org.http4s" %%% "http4s-curl" % "0.0-dd226b5-SNAPSHOT" // or latest commit
 )
 ```
 
