@@ -22,6 +22,14 @@ val http4sVersion = "0.23.14-101-02562a0-SNAPSHOT"
 val munitCEVersion = "2.0-4e051ab-SNAPSHOT"
 ThisBuild / resolvers ++= Resolver.sonatypeOssRepos("snapshots")
 
+ThisBuild / nativeConfig ~= { c =>
+  val osName = Option(System.getProperty("os.name"))
+  val isMacOs = osName.exists(_.toLowerCase().contains("mac"))
+  if (isMacOs) { // brew-installed curl
+    c.withLinkingOptions(c.linkingOptions :+ "-L/usr/local/opt/curl/lib")
+  } else c
+}
+
 lazy val root = project.in(file(".")).enablePlugins(NoPublishPlugin).aggregate(curl, example)
 
 lazy val curl = project
