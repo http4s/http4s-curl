@@ -37,6 +37,11 @@ object CurlRuntime {
     (ecScheduler, shutdown)
   }
 
+  def global: IORuntime = {
+    IORuntime.installGlobal(CurlRuntime())
+    IORuntime.global
+  }
+
   def curlVersion: String = fromCString(libcurl.curl_version())
 
 }

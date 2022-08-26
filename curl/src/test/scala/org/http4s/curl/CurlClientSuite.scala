@@ -30,7 +30,7 @@ import org.http4s.syntax.all._
 
 class CurlClientSuite extends CatsEffectSuite {
 
-  override lazy val munitIoRuntime: IORuntime = CurlRuntime()
+  override lazy val munitIoRuntime: IORuntime = CurlRuntime.global
 
   val clientFixture: SyncIO[FunFixture[Client[IO]]] = ResourceFunFixture(
     Resource.eval(CurlClient.get)
