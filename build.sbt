@@ -21,6 +21,7 @@ ThisBuild / githubWorkflowBuildPostamble ~= {
   _.filterNot(_.name.contains("Check unused compile dependencies"))
 }
 
+val catsEffectVersion = "3.4-519e5ce-SNAPSHOT"
 val http4sVersion = "0.23.14-101-02562a0-SNAPSHOT"
 val munitCEVersion = "2.0-4e051ab-SNAPSHOT"
 ThisBuild / resolvers ++= Resolver.sonatypeOssRepos("snapshots")
@@ -41,6 +42,7 @@ lazy val curl = project
   .settings(
     name := "http4s-curl",
     libraryDependencies ++= Seq(
+      "com.armanbilge" %%% "cats-effect" % catsEffectVersion,
       "com.armanbilge" %%% "http4s-client" % http4sVersion,
       "com.armanbilge" %%% "munit-cats-effect" % munitCEVersion % Test,
     ),
