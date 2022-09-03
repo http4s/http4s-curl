@@ -30,8 +30,9 @@ final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM])
 
   def poll(timeout: Duration): Boolean = {
     val timeoutIsInf = timeout == Duration.Inf
+    val noCallbacks = callbacks.isEmpty
 
-    if (timeoutIsInf && callbacks.isEmpty) false
+    if (timeoutIsInf && noCallbacks) false
     else {
       val timeoutMillis =
         if (timeoutIsInf) Int.MaxValue else timeout.toMillis.min(Int.MaxValue).toInt
@@ -49,34 +50,37 @@ final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM])
           throw new RuntimeException(s"curl_multi_poll: $pollCode")
       }
 
-      val runningHandles = stackalloc[CInt]()
-      val performCode = libcurl.curl_multi_perform(multiHandle, runningHandles)
-      if (performCode != 0)
-        throw new RuntimeException(s"curl_multi_perform: $performCode")
+      if (noCallbacks) false
+      else {
+        val runningHandles = stackalloc[CInt]()
+        val performCode = libcurl.curl_multi_perform(multiHandle, runningHandles)
+        if (performCode != 0)
+          throw new RuntimeException(s"curl_multi_perform: $performCode")
 
-      while ({
-        val msgsInQueue = stackalloc[CInt]()
-        val info = libcurl.curl_multi_info_read(multiHandle, msgsInQueue)
-        if (info != null) {
-          if (libcurl.curl_CURLMsg_msg(info) == libcurl_const.CURLMSG_DONE) {
-            val handle = libcurl.curl_CURLMsg_easy_handle(info)
-            callbacks.remove(handle).foreach { cb =>
-              val result = libcurl.curl_CURLMsg_data_result(info)
-              cb(
-                if (result == 0) Right(())
-                else Left(new RuntimeException(s"curl_multi_info_read: $result"))
-              )
+        while ({
+          val msgsInQueue = stackalloc[CInt]()
+          val info = libcurl.curl_multi_info_read(multiHandle, msgsInQueue)
+          if (info != null) {
+            if (libcurl.curl_CURLMsg_msg(info) == libcurl_const.CURLMSG_DONE) {
+              val handle = libcurl.curl_CURLMsg_easy_handle(info)
+              callbacks.remove(handle).foreach { cb =>
+                val result = libcurl.curl_CURLMsg_data_result(info)
+                cb(
+                  if (result == 0) Right(())
+                  else Left(new RuntimeException(s"curl_multi_info_read: $result"))
+                )
+              }
+
+              val code = libcurl.curl_multi_remove_handle(multiHandle, handle)
+              if (code != 0)
+                throw new RuntimeException(s"curl_multi_remove_handle: $code")
             }
+            true
+          } else false
+        }) {}
 
-            val code = libcurl.curl_multi_remove_handle(multiHandle, handle)
-            if (code != 0)
-              throw new RuntimeException(s"curl_multi_remove_handle: $code")
-          }
-          true
-        } else false
-      }) {}
-
-      !runningHandles > 0
+        !runningHandles > 0
+      }
     }
   }
 
