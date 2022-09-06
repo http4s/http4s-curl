@@ -18,7 +18,10 @@ ThisBuild / githubWorkflowBuildPreamble ++= Seq(
     cond = Some("startsWith(matrix.os, 'ubuntu')"),
   ),
   WorkflowStep.Run(
-    List("vcpkg install curl"),
+    List(
+      "vcpkg integrate install",
+      "vcpkg install curl",
+    ),
     name = Some("Install libcurl (windows)"),
     cond = Some("startsWith(matrix.os, 'windows')"),
   ),

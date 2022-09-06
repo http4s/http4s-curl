@@ -86,7 +86,9 @@ jobs:
       - name: Install libcurl (windows)
         if: startsWith(matrix.os, 'windows')
         shell: bash
-        run: vcpkg install curl
+        run: |
+          vcpkg integrate install
+          vcpkg install curl
 
       - name: Check that workflows are up to date
         shell: bash
