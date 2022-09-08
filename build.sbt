@@ -38,8 +38,16 @@ ThisBuild / resolvers ++= Resolver.sonatypeOssRepos("snapshots")
 ThisBuild / nativeConfig ~= { c =>
   val osName = Option(System.getProperty("os.name"))
   val isMacOs = osName.exists(_.toLowerCase().contains("mac"))
+  val isWindows = osName.exists(_.toLowerCase().contains("windows"))
   if (isMacOs) { // brew-installed curl
     c.withLinkingOptions(c.linkingOptions :+ "-L/usr/local/opt/curl/lib")
+  } else if (isWindows) { // vcpkg-installed curl
+    c.withLinkingOptions(
+      c.linkingOptions ++ List(
+        "-I/c/vcpkg/installed/x64-windows/include/",
+        "-L/c/vcpkg/installed/x64-windows/lib/",
+      )
+    )
   } else c
 }
 
