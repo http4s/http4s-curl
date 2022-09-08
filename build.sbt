@@ -44,6 +44,7 @@ ThisBuild / nativeConfig ~= { c =>
   } else if (isWindows) { // vcpkg-installed curl
     c.withLinkingOptions(
       c.linkingOptions ++ List(
+        "-v",
         "-I/c/vcpkg/installed/x64-windows/include/",
         "-L/c/vcpkg/installed/x64-windows/lib/",
       )
