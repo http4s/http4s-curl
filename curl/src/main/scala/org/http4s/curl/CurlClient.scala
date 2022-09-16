@@ -62,7 +62,7 @@ private[curl] object CurlClient {
           IO(gcr.clear())
         }
 
-        dispatcher <- Dispatcher.sequential[IO]
+        dispatcher <- Dispatcher[IO]
 
         handle <- Resource.make {
           IO {

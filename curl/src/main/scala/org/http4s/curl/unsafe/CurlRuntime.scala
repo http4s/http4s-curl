@@ -33,13 +33,28 @@ object CurlRuntime {
   }
 
   def defaultExecutionContextScheduler(): (ExecutionContext with Scheduler, () => Unit) = {
-    val (ecScheduler, shutdown) = CurlExecutorScheduler()
+    val (ecScheduler, shutdown) = CurlExecutorScheduler(64)
     (ecScheduler, shutdown)
   }
 
-  def global: IORuntime = {
-    IORuntime.installGlobal(CurlRuntime())
-    IORuntime.global
+  private[this] var _global: IORuntime = null
+
+  private[curl] def installGlobal(global: => IORuntime): Boolean =
+    if (_global == null) {
+      _global = global
+      true
+    } else {
+      false
+    }
+
+  lazy val global: IORuntime = {
+    if (_global == null) {
+      installGlobal {
+        CurlRuntime()
+      }
+    }
+
+    _global
   }
 
   def curlVersion: String = fromCString(libcurl.curl_version())

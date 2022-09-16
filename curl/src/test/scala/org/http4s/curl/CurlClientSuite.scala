@@ -19,6 +19,7 @@ package org.http4s.curl
 import cats.effect.IO
 import cats.effect.SyncIO
 import cats.effect.kernel.Resource
+import cats.effect.std.UUIDGen
 import cats.effect.unsafe.IORuntime
 import cats.syntax.all._
 import munit.CatsEffectSuite
@@ -30,7 +31,7 @@ import org.http4s.syntax.all._
 
 class CurlClientSuite extends CatsEffectSuite {
 
-  override lazy val munitIoRuntime: IORuntime = CurlRuntime.global
+  override lazy val munitIORuntime: IORuntime = CurlRuntime.global
 
   val clientFixture: SyncIO[FunFixture[Client[IO]]] = ResourceFunFixture(
     Resource.eval(CurlClient.get)
@@ -50,7 +51,8 @@ class CurlClientSuite extends CatsEffectSuite {
   }
 
   clientFixture.test("3 post echos") { client =>
-    IO.randomUUID
+    UUIDGen
+      .randomString[IO]
       .flatMap { uuid =>
         val msg = s"hello postman $uuid"
         client
