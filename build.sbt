@@ -1,4 +1,4 @@
-ThisBuild / tlBaseVersion := "0.0"
+ThisBuild / tlBaseVersion := "0.1"
 
 ThisBuild / developers := List(
   tlGitHubDev("armanbilge", "Arman Bilge")
@@ -21,10 +21,9 @@ ThisBuild / githubWorkflowBuildPostamble ~= {
   _.filterNot(_.name.contains("Check unused compile dependencies"))
 }
 
-val catsEffectVersion = "3.4-54f2b02-SNAPSHOT"
-val http4sVersion = "0.23.14-101-02562a0-SNAPSHOT"
-val munitCEVersion = "2.0-4e051ab-SNAPSHOT"
-ThisBuild / resolvers ++= Resolver.sonatypeOssRepos("snapshots")
+val catsEffectVersion = "3.3.14"
+val http4sVersion = "0.23.16"
+val munitCEVersion = "2.0.0-M3"
 
 ThisBuild / nativeConfig ~= { c =>
   val osName = Option(System.getProperty("os.name"))
@@ -42,9 +41,9 @@ lazy val curl = project
   .settings(
     name := "http4s-curl",
     libraryDependencies ++= Seq(
-      "com.armanbilge" %%% "cats-effect" % catsEffectVersion,
-      "com.armanbilge" %%% "http4s-client" % http4sVersion,
-      "com.armanbilge" %%% "munit-cats-effect" % munitCEVersion % Test,
+      "org.typelevel" %%% "cats-effect" % catsEffectVersion,
+      "org.http4s" %%% "http4s-client" % http4sVersion,
+      "org.typelevel" %%% "munit-cats-effect" % munitCEVersion % Test,
     ),
   )
 
@@ -54,6 +53,6 @@ lazy val example = project
   .dependsOn(curl)
   .settings(
     libraryDependencies ++= Seq(
-      "com.armanbilge" %%% "http4s-circe" % http4sVersion
+      "org.http4s" %%% "http4s-circe" % http4sVersion
     )
   )

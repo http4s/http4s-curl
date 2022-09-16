@@ -25,7 +25,20 @@ import org.http4s.curl.unsafe.CurlRuntime
 
 trait CurlApp extends IOApp {
 
-  final override lazy val runtime: IORuntime = CurlRuntime(runtimeConfig)
+  final override lazy val runtime: IORuntime = {
+    val installed = CurlRuntime.installGlobal {
+      CurlRuntime(runtimeConfig)
+    }
+
+    if (!installed) {
+      System.err
+        .println(
+          "WARNING: CurlRuntime global runtime already initialized; custom configurations will be ignored"
+        )
+    }
+
+    CurlRuntime.global
+  }
 
   final lazy val curlClient: Client[IO] =
     CurlClient(runtime.compute.asInstanceOf[CurlExecutorScheduler])
