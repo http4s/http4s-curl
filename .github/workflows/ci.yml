@@ -98,8 +98,8 @@ jobs:
           source: "C:/vcpkg/installed/x64-windows/lib/libcurl.lib"
           target: "C:/vcpkg/installed/x64-windows/lib/curl.lib"
 
-      - name: Check that workflows are up to date
-        run: sbt githubWorkflowCheck
+      # - name: Check that workflows are up to date
+      #   run: sbt githubWorkflowCheck
 
       - name: Check headers and formatting
         if: matrix.java == 'temurin@17'
