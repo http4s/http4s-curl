@@ -16,7 +16,6 @@
 
 package org.http4s.curl.unsafe
 
-import scala.annotation.nowarn
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
 
@@ -64,7 +63,6 @@ private[curl] object libcurl_const {
 
 @link("curl")
 @extern
-@nowarn
 private[curl] object libcurl {
 
   type CURL
