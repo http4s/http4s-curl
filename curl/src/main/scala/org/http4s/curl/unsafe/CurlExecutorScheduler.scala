@@ -95,7 +95,13 @@ final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM])
 private[curl] object CurlExecutorScheduler {
 
   def apply(): (CurlExecutorScheduler, () => Unit) = {
-    val initCode = libcurl.curl_global_init(0)
+    val initCode = if (isWindows) {
+      // TODO: add CONSTANT to the bindings => #define CURL_GLOBAL_WIN32 (1<<1)
+      libcurl.curl_global_init(2)
+    } else {
+      libcurl.curl_global_init(0)
+    }
+      
     if (initCode != 0)
       throw new RuntimeException(s"curl_global_init: $initCode")
 
