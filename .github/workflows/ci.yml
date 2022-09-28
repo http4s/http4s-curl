@@ -10,7 +10,6 @@ name: Continuous Integration
 on:
   pull_request:
     branches: ['**', '!update/**', '!pr/**']
-  workflow_dispatch:
   push:
     branches: ['**', '!update/**', '!pr/**']
     tags: [v*]
@@ -37,6 +36,9 @@ jobs:
           - windows-2022
         scala: [3.1.3, 2.13.9]
         java: [temurin@17]
+        exclude:
+          - scala: 3.1.3
+            os: windows-2022
     runs-on: ${{ matrix.os }}
     steps:
       - name: Ignore line ending differences in git
@@ -90,17 +92,11 @@ jobs:
         run: |
           vcpkg integrate install
           vcpkg install --triplet x64-windows curl
-          
-      - name: Fix libcurl on Windows (libcurl.lib -> curl.lib)
-        if: startsWith(matrix.os, 'windows')
-        shell: cmd
-        run: |
-          dir "C:\vcpkg\installed\x64-windows\"
-          dir "C:\vcpkg\installed\x64-windows\lib\"
-          copy "C:\vcpkg\installed\x64-windows\lib\libcurl.lib" "C:\vcpkg\installed\x64-windows\lib\curl.lib"
+          cp "C:\vcpkg\installed\x64-windows\lib\libcurl.lib" "C:\vcpkg\installed\x64-windows\lib\curl.lib"
 
-      # - name: Check that workflows are up to date
-      #   run: sbt githubWorkflowCheck
+      - name: Check that workflows are up to date
+        shell: bash
+        run: sbt githubWorkflowCheck
 
       - name: Check headers and formatting
         if: matrix.java == 'temurin@17'

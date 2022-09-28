@@ -5,11 +5,14 @@ ThisBuild / developers := List(
 )
 ThisBuild / startYear := Some(2022)
 
-ThisBuild / crossScalaVersions := Seq("3.1.3", "2.13.9")
+val scala3 = "3.1.3"
+ThisBuild / crossScalaVersions := Seq(scala3, "2.13.9")
 ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
 // ThisBuild / tlJdkRelease := Some(8)
 ThisBuild / githubWorkflowOSes :=
   Seq("ubuntu-20.04", "ubuntu-22.04", "macos-11", "macos-12", "windows-2022")
+ThisBuild / githubWorkflowBuildMatrixExclusions +=
+  MatrixExclude(Map("scala" -> scala3, "os" -> "windows-2022")) // dottydoc bug
 
 ThisBuild / githubWorkflowBuildPreamble ++= Seq(
   WorkflowStep.Run(
@@ -21,6 +24,7 @@ ThisBuild / githubWorkflowBuildPreamble ++= Seq(
     List(
       "vcpkg integrate install",
       "vcpkg install --triplet x64-windows curl",
+      """cp "C:\vcpkg\installed\x64-windows\lib\libcurl.lib" "C:\vcpkg\installed\x64-windows\lib\curl.lib"""",
     ),
     name = Some("Install libcurl (windows)"),
     cond = Some("startsWith(matrix.os, 'windows')"),
