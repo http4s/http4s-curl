@@ -19,7 +19,7 @@ package org.http4s.curl
 import cats.effect.IO
 import cats.effect.SyncIO
 import cats.effect.kernel.Resource
-import cats.effect.std.UUIDGen
+import cats.effect.std.Random
 import cats.effect.unsafe.IORuntime
 import cats.syntax.all._
 import munit.CatsEffectSuite
@@ -51,19 +51,20 @@ class CurlClientSuite extends CatsEffectSuite {
   }
 
   clientFixture.test("3 post echos") { client =>
-    UUIDGen
-      .randomString[IO]
-      .flatMap { uuid =>
-        val msg = s"hello postman $uuid"
-        client
-          .expect[String](
-            Request[IO](POST, uri = uri"https://postman-echo.com/post").withEntity(msg)
-          )
-          .map(_.contains(msg))
-          .assert
-      }
-      .parReplicateA_(3)
-
+    Random.scalaUtilRandom[IO].flatMap { random =>
+      random
+        .nextString(8)
+        .flatMap { s =>
+          val msg = s"hello postman $s"
+          client
+            .expect[String](
+              Request[IO](POST, uri = uri"https://postman-echo.com/post").withEntity(msg)
+            )
+            .map(_.contains(msg))
+            .assert
+        }
+        .parReplicateA_(3)
+    }
   }
 
 }
