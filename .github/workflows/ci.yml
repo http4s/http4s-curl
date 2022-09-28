@@ -89,6 +89,13 @@ jobs:
         run: |
           vcpkg integrate install
           vcpkg install --triplet x64-windows curl
+          
+      - name: Fix libcurl on Windows (libcurl.lib -> curl.lib)
+        if: startsWith(matrix.os, 'windows')
+        uses: canastro/copy-file-action@master
+        with:
+          source: "C:/vcpkg/installed/x64-windows/lib/libcurl.lib"
+          target: "C:/vcpkg/installed/x64-windows/lib/curl.lib"
 
       - name: Check that workflows are up to date
         shell: bash
