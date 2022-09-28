@@ -35,22 +35,34 @@ val http4sVersion = "0.23.14-101-02562a0-SNAPSHOT"
 val munitCEVersion = "2.0-4e051ab-SNAPSHOT"
 ThisBuild / resolvers ++= Resolver.sonatypeOssRepos("snapshots")
 
+val vcpkgBaseDir = "C:/vcpkg/"
+
 ThisBuild / nativeConfig ~= { c =>
-  val osName = Option(System.getProperty("os.name"))
-  val isMacOs = osName.exists(_.toLowerCase().contains("mac"))
-  val isWindows = osName.exists(_.toLowerCase().contains("windows"))
+  val osNameOpt = sys.props.get("os.name")
+  val isMacOs = osNameOpt.exists(_.toLowerCase().contains("mac"))
+  val isWindows = osNameOpt.exists(_.toLowerCase().contains("windows"))
   if (isMacOs) { // brew-installed curl
     c.withLinkingOptions(c.linkingOptions :+ "-L/usr/local/opt/curl/lib")
   } else if (isWindows) { // vcpkg-installed curl
     c.withLinkingOptions(
-      c.linkingOptions ++ List(
+      List(
         "-v",
-        "-I/c/vcpkg/installed/x64-windows/include/",
-        "-L/c/vcpkg/installed/x64-windows/lib/",
+        s"-L${vcpkgBaseDir}/installed/x64-windows/lib/"
       )
+    )
+    .withCompileOptions(
+      c.compileOptions ++ List(s"-I${vcpkgBaseDir}/installed/x64-windows/include/")
     )
   } else c
 }
+
+// These shared settings are used specifically for Windows, where we need to put in the PATH the directory containing the shared libraries
+lazy val sharedSettings = Seq(
+  Compile / envVars := {
+    if (sys.props.get("os.name").exists(_.toLowerCase().contains("windows")) == false) Map()
+    else Map("PATH" -> s"${sys.props.getOrElse("PATH","")};${vcpkgBaseDir}/installed/x64-windows/bin/")
+  },
+)
 
 lazy val root = project.in(file(".")).enablePlugins(NoPublishPlugin).aggregate(curl, example)
 
@@ -58,12 +70,14 @@ lazy val curl = project
   .in(file("curl"))
   .enablePlugins(ScalaNativePlugin)
   .settings(
-    name := "http4s-curl",
-    libraryDependencies ++= Seq(
-      "com.armanbilge" %%% "cats-effect" % catsEffectVersion,
-      "com.armanbilge" %%% "http4s-client" % http4sVersion,
-      "com.armanbilge" %%% "munit-cats-effect" % munitCEVersion % Test,
-    ),
+    sharedSettings ++ Seq(
+      name := "http4s-curl",
+      libraryDependencies ++= Seq(
+        "com.armanbilge" %%% "cats-effect" % catsEffectVersion,
+        "com.armanbilge" %%% "http4s-client" % http4sVersion,
+        "com.armanbilge" %%% "munit-cats-effect" % munitCEVersion % Test,
+      ),
+    )
   )
 
 lazy val example = project
@@ -71,7 +85,9 @@ lazy val example = project
   .enablePlugins(ScalaNativePlugin, NoPublishPlugin)
   .dependsOn(curl)
   .settings(
-    libraryDependencies ++= Seq(
-      "com.armanbilge" %%% "http4s-circe" % http4sVersion
+    sharedSettings ++ Seq(
+      libraryDependencies ++= Seq(
+        "com.armanbilge" %%% "http4s-circe" % http4sVersion
+      )
     )
   )
