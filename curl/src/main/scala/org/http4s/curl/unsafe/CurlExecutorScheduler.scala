@@ -23,8 +23,8 @@ import scala.concurrent.duration.Duration
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
 
-final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM])
-    extends PollingExecutorScheduler {
+final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM], pollEvery: Int)
+    extends PollingExecutorScheduler(pollEvery) {
 
   private val callbacks = mutable.Map[Ptr[libcurl.CURL], Either[Throwable, Unit] => Unit]()
 
@@ -94,14 +94,8 @@ final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM])
 
 private[curl] object CurlExecutorScheduler {
 
-  def apply(): (CurlExecutorScheduler, () => Unit) = {
-    val initCode = if (isWindows) {
-      // TODO: add CONSTANT to the bindings => #define CURL_GLOBAL_WIN32 (1<<1)
-      libcurl.curl_global_init(2)
-    } else {
-      libcurl.curl_global_init(0)
-    }
-      
+  def apply(pollEvery: Int): (CurlExecutorScheduler, () => Unit) = {
+    val initCode = libcurl.curl_global_init(2)
     if (initCode != 0)
       throw new RuntimeException(s"curl_global_init: $initCode")
 
@@ -116,7 +110,7 @@ private[curl] object CurlExecutorScheduler {
         throw new RuntimeException(s"curl_multi_cleanup: $code")
     }
 
-    (new CurlExecutorScheduler(multiHandle), shutdown)
+    (new CurlExecutorScheduler(multiHandle, pollEvery), shutdown)
   }
 
 }
