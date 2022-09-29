@@ -1,6 +1,6 @@
 # http4s-curl
 
-An client for [http4s](https://http4s.org/) on [Scala Native](https://github.com/scala-native/scala-native/), backed by [libcurl](https://curl.se/libcurl/). Check out the [example](https://github.com/http4s/http4s-curl/blob/main/example/src/main/scala/ExampleApp.scala).
+A client for [http4s](https://http4s.org/) on [Scala Native](https://github.com/scala-native/scala-native/), backed by [libcurl](https://curl.se/libcurl/). Check out the [example](https://github.com/http4s/http4s-curl/blob/main/example/src/main/scala/ExampleApp.scala).
 
 - Non-blocking, with support for running multiple concurrent requests in parallel
 - Streaming request and response bodies with backpressure
@@ -8,7 +8,7 @@ An client for [http4s](https://http4s.org/) on [Scala Native](https://github.com
 
 ```scala
 libraryDependencies ++= Seq(
-  "org.http4s" %%% "http4s-curl" % "0.1.0"
+  "org.http4s" %%% "http4s-curl" % "0.1.1"
 )
 ```
 
