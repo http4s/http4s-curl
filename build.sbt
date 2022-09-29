@@ -58,17 +58,6 @@ ThisBuild / nativeConfig ~= { c =>
   } else c
 }
 
-// These shared settings are used specifically for Windows, where we need to put in the PATH the directory containing the shared libraries
-lazy val sharedSettings = Seq(
-  Compile / envVars := {
-    if (sys.props.get("os.name").exists(_.toLowerCase().contains("windows")) == false) Map()
-    else
-      Map(
-        "PATH" -> s"${sys.props.getOrElse("PATH", "")};${vcpkgBaseDir}/installed/x64-windows/bin/"
-      )
-  }
-)
-
 lazy val root = project.in(file(".")).enablePlugins(NoPublishPlugin).aggregate(curl, example)
 
 lazy val curl = project
@@ -82,7 +71,6 @@ lazy val curl = project
       "org.typelevel" %%% "munit-cats-effect" % munitCEVersion % Test,
     ),
   )
-  .settings(sharedSettings)
 
 lazy val example = project
   .in(file("example"))
@@ -93,4 +81,3 @@ lazy val example = project
       "org.http4s" %%% "http4s-circe" % http4sVersion
     )
   )
-  .settings(sharedSettings)
