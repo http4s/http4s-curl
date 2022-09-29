@@ -38,6 +38,8 @@ val catsEffectVersion = "3.3.14"
 val http4sVersion = "0.23.16"
 val munitCEVersion = "2.0.0-M3"
 
+val vcpkgBaseDir = "C:/vcpkg/"
+
 ThisBuild / nativeConfig ~= { c =>
   val osNameOpt = sys.props.get("os.name")
   val isMacOs = osNameOpt.exists(_.toLowerCase().contains("mac"))
@@ -45,22 +47,18 @@ ThisBuild / nativeConfig ~= { c =>
   if (isMacOs) { // brew-installed curl
     c.withLinkingOptions(c.linkingOptions :+ "-L/usr/local/opt/curl/lib")
   } else if (isWindows) { // vcpkg-installed curl
-    val vcpkgBaseDir = "C:/vcpkg/"
     c.withCompileOptions(c.compileOptions :+ s"-I${vcpkgBaseDir}/installed/x64-windows/include/")
       .withLinkingOptions(c.linkingOptions :+ s"-L${vcpkgBaseDir}/installed/x64-windows/lib/")
   } else c
 }
 
-// These shared settings are used specifically for Windows, where we need to put in the PATH the directory containing the shared libraries
-lazy val sharedSettings = Seq(
-  Compile / envVars := {
-    if (sys.props.get("os.name").exists(_.toLowerCase().contains("windows")) == false) Map()
-    else
-      Map(
-        "PATH" -> s"${sys.props.getOrElse("PATH", "")};${vcpkgBaseDir}/installed/x64-windows/bin/"
-      )
-  }
-)
+ThisBuild / envVars ++= {
+  if (sys.props.get("os.name").exists(_.toLowerCase().contains("windows")))
+    Map(
+      "PATH" -> s"${sys.props.getOrElse("PATH", "")};${vcpkgBaseDir}/installed/x64-windows/bin/"
+    )
+  else Map.empty[String, String]
+}
 
 lazy val root = project.in(file(".")).enablePlugins(NoPublishPlugin).aggregate(curl, example)
 
@@ -75,7 +73,6 @@ lazy val curl = project
       "org.typelevel" %%% "munit-cats-effect" % munitCEVersion % Test,
     ),
   )
-  .settings(sharedSettings)
 
 lazy val example = project
   .in(file("example"))
@@ -86,4 +83,3 @@ lazy val example = project
       "org.http4s" %%% "http4s-circe" % http4sVersion
     )
   )
-  .settings(sharedSettings)
