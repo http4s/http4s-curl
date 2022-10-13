@@ -34,7 +34,7 @@ jobs:
           - macos-11
           - macos-12
           - windows-2022
-        scala: [3.2.0, 2.13.9]
+        scala: [3.2.0, 2.13.10]
         java: [temurin@17]
         exclude:
           - scala: 3.2.0
@@ -146,7 +146,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-20.04]
-        scala: [2.13.9]
+        scala: [2.13.10]
         java: [temurin@17]
     runs-on: ${{ matrix.os }}
     steps:
@@ -197,12 +197,12 @@ jobs:
           tar xf targets.tar
           rm targets.tar
 
-      - name: Download target directories (2.13.9)
+      - name: Download target directories (2.13.10)
         uses: actions/download-artifact@v2
         with:
-          name: target-${{ matrix.os }}-${{ matrix.java }}-2.13.9
+          name: target-${{ matrix.os }}-${{ matrix.java }}-2.13.10
 
-      - name: Inflate target directories (2.13.9)
+      - name: Inflate target directories (2.13.10)
         run: |
           tar xf targets.tar
           rm targets.tar
