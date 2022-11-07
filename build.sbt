@@ -5,7 +5,7 @@ ThisBuild / developers := List(
 )
 ThisBuild / startYear := Some(2022)
 
-val scala3 = "3.2.0"
+val scala3 = "3.2.1"
 ThisBuild / crossScalaVersions := Seq(scala3, "2.13.10")
 ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
 // ThisBuild / tlJdkRelease := Some(8)
