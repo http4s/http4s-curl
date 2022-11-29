@@ -34,7 +34,7 @@ ThisBuild / githubWorkflowBuildPostamble ~= {
   _.filterNot(_.name.contains("Check unused compile dependencies"))
 }
 
-val catsEffectVersion = "3.3.14"
+val catsEffectVersion = "3.4.2"
 val http4sVersion = "0.23.16"
 val munitCEVersion = "2.0.0-M3"
 
