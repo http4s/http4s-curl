@@ -35,7 +35,7 @@ ThisBuild / githubWorkflowBuildPostamble ~= {
 }
 
 val catsEffectVersion = "3.3.14"
-val http4sVersion = "0.23.16"
+val http4sVersion = "0.23.17"
 val munitCEVersion = "2.0.0-M3"
 
 val vcpkgBaseDir = "C:/vcpkg/"
