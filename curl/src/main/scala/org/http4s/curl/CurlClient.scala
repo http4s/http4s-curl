@@ -62,7 +62,7 @@ private[curl] object CurlClient {
           IO(gcr.clear())
         }
 
-        dispatcher <- Dispatcher[IO]
+        dispatcher <- Dispatcher.parallel[IO]
 
         handle <- Resource.make {
           IO {
