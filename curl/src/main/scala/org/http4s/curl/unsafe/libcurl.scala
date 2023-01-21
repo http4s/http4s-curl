@@ -40,6 +40,8 @@ private[curl] object libcurl_const {
   final val CURLOPT_READFUNCTION = CURLOPTTYPE_FUNCTIONPOINT + 12
   final val CURLOPT_READDATA = CURLOPTTYPE_OBJECTPOINT + 9
   final val CURLOPT_UPLOAD = CURLOPTTYPE_LONG + 46
+  final val CURLOPT_CONNECT_ONLY = CURLOPTTYPE_LONG + 141
+  final val CURLOPT_WS_OPTIONS = CURLOPTTYPE_LONG + 320
 
   final val CURL_HTTP_VERSION_NONE = 0L
   final val CURL_HTTP_VERSION_1_0 = 1L
@@ -59,6 +61,18 @@ private[curl] object libcurl_const {
   final val CURL_WRITEFUNC_PAUSE = 0x10000001L
   final val CURL_READFUNC_ABORT = 0x10000000L
   final val CURL_READFUNC_PAUSE = 0x10000001L
+
+  // constant flags from websocket.h
+  final val CURLWS_TEXT: CInt = 1 << 0
+  final val CURLWS_BINARY: CInt = 1 << 1
+  final val CURLWS_CONT: CInt = 1 << 2
+  final val CURLWS_CLOSE: CInt = 1 << 3
+  final val CURLWS_PING: CInt = 1 << 4
+  final val CURLWS_OFFSET: CInt = 1 << 5
+  final val CURLWS_PONG: CInt = 1 << 6
+
+  // websocket options flags
+  final val CURLWS_RAW_MODE = 1 << 0
 }
 
 @link("curl")
@@ -82,6 +96,8 @@ private[curl] object libcurl {
   type write_callback = CFuncPtr4[Ptr[CChar], CSize, CSize, Ptr[Byte], CSize]
 
   type read_callback = CFuncPtr4[Ptr[CChar], CSize, CSize, Ptr[Byte], CSize]
+
+  type curl_ws_frame = CStruct4[CInt, CInt, CSize, CSize] // age, flags, offset, bytesleft
 
   def curl_version(): Ptr[CChar] = extern
 
@@ -114,6 +130,9 @@ private[curl] object libcurl {
 
   @name("org_http4s_curl_CURLMsg_data_result")
   def curl_CURLMsg_data_result(curlMsg: Ptr[CURLMsg]): CURLcode = extern
+
+  @name("org_http4s_curl_get_protocols")
+  def curl_protocols_info(): Ptr[CString] = extern
 
   def curl_multi_add_handle(multi_handle: Ptr[CURLM], curl_handle: Ptr[CURL]): CURLMcode = extern
 
@@ -208,6 +227,41 @@ private[curl] object libcurl {
       upload: CLong,
   ): CURLcode =
     extern
+
+  @name("curl_easy_setopt")
+  def curl_easy_setopt_connect_only(
+      curl: Ptr[CURL],
+      option: CURLOPT_CONNECT_ONLY.type,
+      value: CLong,
+  ): CURLcode =
+    extern
+
+  @name("curl_easy_setopt")
+  def curl_easy_setopt_websocket(
+      curl: Ptr[CURL],
+      option: CURLOPT_WS_OPTIONS.type,
+      flags: CLong,
+  ): CURLcode =
+    extern
+
+  @name("curl_ws_send")
+  def curl_easy_ws_send(
+      curl: Ptr[CURL],
+      buffer: Ptr[Byte],
+      bufLen: CSize,
+      send: Ptr[CSize],
+      fragsize: CSize,
+      flags: UInt,
+  ): CURLcode = extern
+
+  @name("curl_ws_recv")
+  def curl_easy_ws_recv(
+      curl: Ptr[CURL],
+      buffer: Ptr[Byte],
+      bufLen: CSize,
+      recv: Ptr[CSize],
+      meta: Ptr[curl_ws_frame],
+  ): CURLcode = extern
 
   def curl_slist_append(list: Ptr[curl_slist], string: Ptr[CChar]): Ptr[curl_slist] = extern
 

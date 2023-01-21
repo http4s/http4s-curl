@@ -14,4 +14,8 @@ CURLcode org_http4s_curl_CURLMsg_data_result(CURLMsg *curlMsg) {
   return curlMsg->data.result;
 }
 
+const char * const * org_http4s_curl_get_protocols(){
+  return curl_version_info(CURLVERSION_NOW) -> protocols;
+}
+
 #endif // has_include
