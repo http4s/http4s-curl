@@ -20,6 +20,7 @@ import cats.effect.IO
 import cats.effect.IOApp
 import cats.effect.unsafe.IORuntime
 import org.http4s.client.Client
+import org.http4s.client.websocket.WSClient
 import org.http4s.curl.unsafe.CurlExecutorScheduler
 import org.http4s.curl.unsafe.CurlRuntime
 
@@ -40,8 +41,21 @@ trait CurlApp extends IOApp {
     CurlRuntime.global
   }
 
-  final lazy val curlClient: Client[IO] =
-    CurlClient(runtime.compute.asInstanceOf[CurlExecutorScheduler])
+  private def scheduler = runtime.compute.asInstanceOf[CurlExecutorScheduler]
+  final lazy val curlClient: Client[IO] = CurlClient(scheduler)
+
+  /** gets websocket client if current libcurl environment supports it */
+  final def websocket(respondToPings: Boolean = true): Option[WSClient[IO]] =
+    WebSocketClient(scheduler, respondToPings)
+
+  /** gets websocket client if current libcurl environment supports it throws an error otherwise */
+  final def websocketOrError(respondToPings: Boolean = true) = websocket(respondToPings).getOrElse(
+    throw new RuntimeException(
+      """Websocket is not supported in this environment!
+Note that websocket support in curl is experimental and is not available by default,
+so you need to either build it with websocket support or use an already built libcurl with websocket support."""
+    )
+  )
 
 }
 
