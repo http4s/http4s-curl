@@ -177,14 +177,14 @@ private[curl] object WebSocketClient {
                 val meta = stackalloc[libcurl.curl_ws_frame]()
                 var payload = ByteVector.empty
 
-                do {
+                while ({
                   throwOnError(
                     libcurl.curl_easy_ws_recv(curl, buffer, bufSize, recv, meta)
                   )
 
                   payload = payload ++ ByteVector.fromPtr(buffer, (!recv).toLong)
-
-                } while ((!recv) == bufSize)
+                  (!recv) == bufSize
+                }) {}
 
                 if (meta.isText) {
                   val str = payload.decodeUtf8.getOrElse(throw InvalidTextFrame)
@@ -210,10 +210,8 @@ private[curl] object WebSocketClient {
     }
 
   sealed trait Error extends Throwable with Serializable with Product
-  final case object InvalidTextFrame
-      extends Exception("Text frame data must be valid utf8")
-      with Error
-  final case object PartialFragmentFrame
+  case object InvalidTextFrame extends Exception("Text frame data must be valid utf8") with Error
+  case object PartialFragmentFrame
       extends Exception("Partial fragments are not supported by this driver")
 
 }
