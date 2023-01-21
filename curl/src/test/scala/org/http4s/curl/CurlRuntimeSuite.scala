@@ -19,17 +19,12 @@ package org.http4s.curl
 import cats.effect.IO
 import cats.effect.SyncIO
 import cats.effect.kernel.Resource
-import cats.effect.std.Random
 import cats.effect.unsafe.IORuntime
-import cats.syntax.all._
 import munit.CatsEffectSuite
-import org.http4s.Method._
-import org.http4s.Request
 import org.http4s.client.Client
 import org.http4s.curl.unsafe.CurlRuntime
-import org.http4s.syntax.all._
 
-class CurlClientSuite extends CatsEffectSuite {
+class CurlRuntimeSuite extends CatsEffectSuite {
 
   override lazy val munitIORuntime: IORuntime = CurlRuntime.global
 
@@ -37,29 +32,15 @@ class CurlClientSuite extends CatsEffectSuite {
     Resource.eval(CurlClient.get)
   )
 
-  clientFixture.test("3 get echos") { client =>
-    client
-      .expect[String]("https://postman-echo.com/get")
-      .map(_.nonEmpty)
-      .assert
-      .parReplicateA_(3)
+  test("curl version") {
+    val prefix = "libcurl/7."
+    assertEquals(CurlRuntime.curlVersion.take(prefix.length), prefix)
   }
 
-  clientFixture.test("3 post echos") { client =>
-    Random.scalaUtilRandom[IO].flatMap { random =>
-      random
-        .nextString(8)
-        .flatMap { s =>
-          val msg = s"hello postman $s"
-          client
-            .expect[String](
-              Request[IO](POST, uri = uri"https://postman-echo.com/post").withEntity(msg)
-            )
-            .map(_.contains(msg))
-            .assert
-        }
-        .parReplicateA_(3)
-    }
+  test("curl protocols") {
+    val protocols = CurlRuntime.protocols
+    assert(protocols.contains("http"))
+    assert(protocols.contains("https"))
   }
 
 }

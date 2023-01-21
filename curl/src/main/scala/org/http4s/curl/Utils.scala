@@ -18,30 +18,17 @@ package org.http4s.curl.internal
 
 import cats.effect._
 import org.http4s.curl.unsafe.libcurl
+
 import scala.scalanative.unsafe._
-import scala.collection.mutable.ListBuffer
 
 private[curl] object Utils {
-  lazy val protocols: List[String] = {
-
-    val all: ListBuffer[String] = ListBuffer.empty
-    var cur: Ptr[CString] = libcurl.curl_protocols_info()
-    while ((!cur).toLong != 0) {
-      all.addOne(fromCString(!cur).toLowerCase)
-      cur = cur + 1
-    }
-    all.toList
-  }
-
-  lazy val isWebsocketAvailable: Boolean = protocols.contains("ws")
-
   @inline def throwOnError(thunk: => libcurl.CURLcode): Unit = {
     val code = thunk
     if (code != 0)
       throw new RuntimeException(s"curl_easy_setop: $code")
   }
 
-  val createHandler = Resource.make {
+  val createHandler: Resource[IO, Ptr[libcurl.CURL]] = Resource.make {
     IO {
       val handle = libcurl.curl_easy_init()
       if (handle == null)
@@ -51,5 +38,5 @@ private[curl] object Utils {
   } { handle =>
     IO(libcurl.curl_easy_cleanup(handle))
   }
-  val newZone = Resource.make(IO(Zone.open()))(z => IO(z.close()))
+  val newZone: Resource[IO, Zone] = Resource.make(IO(Zone.open()))(z => IO(z.close()))
 }

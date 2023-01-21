@@ -24,6 +24,7 @@ import org.http4s.Uri
 import org.http4s.client.websocket.WSFrame._
 import org.http4s.client.websocket._
 import org.http4s.curl.unsafe.CurlExecutorScheduler
+import org.http4s.curl.unsafe.CurlRuntime
 import org.http4s.curl.unsafe.libcurl
 import org.http4s.curl.unsafe.libcurl_const
 import scodec.bits.ByteVector
@@ -110,7 +111,7 @@ private[curl] object WebSocketClient {
       ec.addHandle(handle, println)
     }
 
-  implicit private class FrameMetaOps(val meta: Ptr[libcurl.curl_ws_frame]) extends AnyVal {
+  implicit private class FrameMetaOps(private val meta: Ptr[libcurl.curl_ws_frame]) extends AnyVal {
     @inline def flags: CInt = !meta.at2
     @inline def isFinal: Boolean = (flags & libcurl_const.CURLWS_CONT) != 0
     @inline def isText: Boolean = (flags & libcurl_const.CURLWS_TEXT) != 0
@@ -120,7 +121,7 @@ private[curl] object WebSocketClient {
   }
 
   def apply(ec: CurlExecutorScheduler, respondToPings: Boolean): Option[WSClient[IO]] =
-    Option.when(internal.Utils.isWebsocketAvailable) {
+    Option.when(CurlRuntime.isWebsocketAvailable) {
       WSClient(respondToPings) { req =>
         internal.Utils.newZone
           .flatMap(implicit zone =>

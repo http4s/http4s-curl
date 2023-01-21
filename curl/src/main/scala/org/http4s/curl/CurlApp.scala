@@ -49,13 +49,14 @@ trait CurlApp extends IOApp {
     WebSocketClient(scheduler, respondToPings)
 
   /** gets websocket client if current libcurl environment supports it throws an error otherwise */
-  final def websocketOrError(respondToPings: Boolean = true) = websocket(respondToPings).getOrElse(
-    throw new RuntimeException(
-      """Websocket is not supported in this environment!
+  final def websocketOrError(respondToPings: Boolean = true): WSClient[IO] =
+    websocket(respondToPings).getOrElse(
+      throw new RuntimeException(
+        """Websocket is not supported in this environment!
 Note that websocket support in curl is experimental and is not available by default,
 so you need to either build it with websocket support or use an already built libcurl with websocket support."""
+      )
     )
-  )
 
 }
 
