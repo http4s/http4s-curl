@@ -44,12 +44,14 @@ ThisBuild / nativeConfig ~= { c =>
   val osNameOpt = sys.props.get("os.name")
   val isMacOs = osNameOpt.exists(_.toLowerCase().contains("mac"))
   val isWindows = osNameOpt.exists(_.toLowerCase().contains("windows"))
-  if (isMacOs) { // brew-installed curl
+  val platformOptions = if (isMacOs) { // brew-installed curl
     c.withLinkingOptions(c.linkingOptions :+ "-L/usr/local/opt/curl/lib")
   } else if (isWindows) { // vcpkg-installed curl
     c.withCompileOptions(c.compileOptions :+ s"-I${vcpkgBaseDir}/installed/x64-windows/include/")
       .withLinkingOptions(c.linkingOptions :+ s"-L${vcpkgBaseDir}/installed/x64-windows/lib/")
   } else c
+
+  platformOptions.withLinkingOptions(platformOptions.linkingOptions :+ "-lcurl")
 }
 
 ThisBuild / envVars ++= {
