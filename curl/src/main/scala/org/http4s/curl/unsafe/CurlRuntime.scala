@@ -61,7 +61,7 @@ object CurlRuntime {
 
   def curlVersion: String = fromCString(libcurl.curl_version())
 
-  lazy val protocols: List[String] = {
+  def protocols: List[String] = {
 
     val all: ListBuffer[String] = ListBuffer.empty
     var cur: Ptr[CString] = libcurl.curl_protocols_info()
@@ -72,6 +72,6 @@ object CurlRuntime {
     all.toList
   }
 
-  lazy val isWebsocketAvailable: Boolean = protocols.contains("ws")
+  def isWebsocketAvailable: Boolean = protocols.contains("ws")
 
 }
