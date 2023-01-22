@@ -21,6 +21,7 @@ import cats.effect.IO
 import cats.effect.Resource
 import cats.effect.SyncIO
 import cats.effect.implicits._
+import cats.effect.kernel.Deferred
 import cats.effect.kernel.Ref
 import cats.effect.std.Dispatcher
 import cats.effect.std.Queue
@@ -35,6 +36,7 @@ import org.http4s.curl.unsafe.libcurl
 import org.http4s.curl.unsafe.libcurl_const
 import scodec.bits.ByteVector
 
+import scala.annotation.unused
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
 
@@ -111,6 +113,20 @@ private[curl] object WebSocketClient {
         con.handler,
         libcurl_const.CURLOPT_WRITEFUNCTION,
         recvCallback(_, _, _, _),
+      )
+    }
+
+    libcurl.curl_easy_setopt_headerdata(
+      con.handler,
+      libcurl_const.CURLOPT_HEADERDATA,
+      internal.Utils.toPtr(con),
+    )
+
+    throwOnError {
+      libcurl.curl_easy_setopt_headerfunction(
+        con.handler,
+        libcurl_const.CURLOPT_HEADERFUNCTION,
+        headerCallback(_, _, _, _),
       )
     }
 
@@ -210,10 +226,24 @@ private[curl] object WebSocketClient {
       .fromPtr[Connection](userdata)
       .onReceive(buffer, size, nmemb)
 
+  private def headerCallback(
+      @unused buffer: Ptr[CChar],
+      size: CSize,
+      nitems: CSize,
+      userdata: Ptr[Byte],
+  ): CSize = {
+    internal.Utils
+      .fromPtr[Connection](userdata)
+      .onEstablished()
+
+    size * nitems
+  }
+
   final private class Connection(
       val handler: Ptr[libcurl.CURL],
       receivedQ: Queue[IO, WSFrame],
       receiving: Ref[SyncIO, Option[Receiving]],
+      established: Deferred[IO, Unit],
       dispatcher: Dispatcher[IO],
   ) {
 
@@ -278,6 +308,23 @@ private[curl] object WebSocketClient {
 
       realsize
     }
+
+    def onEstablished(): Unit = dispatcher.unsafeRunAndForget(established.complete(()))
+
+    def send(flags: CInt, data: ByteVector): IO[Unit] =
+      established.get >>
+        internal.Utils.newZone.use { implicit zone =>
+          IO {
+            val sent = stackalloc[CSize]()
+            val buffer = data.toPtr
+            val size = data.size.toULong
+
+            throwOnError(
+              libcurl
+                .curl_easy_ws_send(handler, buffer, size, sent, 0.toULong, flags.toUInt)
+            )
+          }
+        }
   }
 
   private def createConnection(recvBufferSize: Int) =
@@ -285,8 +332,9 @@ private[curl] object WebSocketClient {
       internal.Utils.createHandler,
       Resource.eval(Queue.bounded[IO, WSFrame](recvBufferSize)),
       Ref[SyncIO].of(Option.empty[Receiving]).to[IO].toResource,
+      IO.deferred[Unit].toResource,
       Dispatcher.sequential[IO],
-    ).parMapN(new Connection(_, _, _, _))
+    ).parMapN(new Connection(_, _, _, _, _))
 
   def apply(
       ec: CurlExecutorScheduler,
@@ -302,38 +350,24 @@ private[curl] object WebSocketClient {
           .map(con =>
             new WSConnection[IO] {
 
-              private def send(flags: CInt, data: ByteVector) =
-                internal.Utils.newZone.use { implicit zone =>
-                  IO {
-                    val sent = stackalloc[CSize]()
-                    val buffer = data.toPtr
-                    val size = data.size.toULong
-
-                    throwOnError(
-                      libcurl
-                        .curl_easy_ws_send(con.handler, buffer, size, sent, 0.toULong, flags.toUInt)
-                    )
-                  }
-                }
-
               override def send(wsf: WSFrame): IO[Unit] = wsf match {
                 case Close(_, _) =>
                   val flags = libcurl_const.CURLWS_CLOSE
-                  send(flags, ByteVector.empty)
+                  con.send(flags, ByteVector.empty)
                 case Ping(data) =>
                   val flags = libcurl_const.CURLWS_PING
-                  send(flags, data)
+                  con.send(flags, data)
                 case Pong(data) =>
                   val flags = libcurl_const.CURLWS_PONG
-                  send(flags, data)
+                  con.send(flags, data)
                 case Text(data, true) =>
                   val flags = libcurl_const.CURLWS_TEXT
                   val bv =
                     ByteVector.encodeUtf8(data).getOrElse(throw InvalidTextFrame)
-                  send(flags, bv)
+                  con.send(flags, bv)
                 case Binary(data, true) =>
                   val flags = libcurl_const.CURLWS_BINARY
-                  send(flags, data)
+                  con.send(flags, data)
                 case _ =>
                   // NOTE curl needs to know total amount of fragment size in first send
                   // and it is not compatible with current websocket interface in http4s

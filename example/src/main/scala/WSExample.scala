@@ -15,28 +15,27 @@
  */
 
 import cats.effect._
+import org.http4s.client.websocket.WSFrame
 import org.http4s.client.websocket.WSRequest
 import org.http4s.curl.CurlApp
 import org.http4s.implicits._
 
-// import scala.concurrent.duration._
-
 object WSExample extends CurlApp.Simple {
 
-  private val fastData = uri"wss://stream.binance.com/ws/btcusdt@aggTrade"
+  // private val fastData = uri"wss://stream.binance.com/ws/btcusdt@aggTrade"
   // private val largeData = uri"wss://stream.binance.com/ws/!ticker@arr"
-  // private val echo = uri"wss://ws.postman-echo.com/raw"
+  private val echo = uri"wss://ws.postman-echo.com/raw"
 
   def run: IO[Unit] = websocketOrError()
-    .connectHighLevel(WSRequest(fastData))
+    .connectHighLevel(WSRequest(echo))
     .use { client =>
-      // def send(retry: Int = 3): IO[Unit] =
-      //   IO.println("sending ...") >> client.send(WSFrame.Text("hello")).recoverWith {
-      //     case _ if retry > 0 => send(retry - 1).delayBy(2.seconds)
-      //   }
+      val send: IO[Unit] =
+        IO.println("sending ...") >> client.send(WSFrame.Text("hello"))
 
       IO.println("ready!") >>
-        client.receiveStream.printlns.compile.drain // .both(send().delayBy(2.seconds)).void
+        client.receiveStream.printlns.compile.drain
+          .both(send)
+          .void
     }
 
 }
