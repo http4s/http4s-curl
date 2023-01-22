@@ -19,6 +19,8 @@ package org.http4s.curl.internal
 import cats.effect._
 import org.http4s.curl.unsafe.libcurl
 
+import scala.scalanative.runtime
+import scala.scalanative.runtime.Intrinsics
 import scala.scalanative.unsafe._
 
 private[curl] object Utils {
@@ -39,4 +41,10 @@ private[curl] object Utils {
     IO(libcurl.curl_easy_cleanup(handle))
   }
   val newZone: Resource[IO, Zone] = Resource.make(IO(Zone.open()))(z => IO(z.close()))
+
+  def toPtr(a: AnyRef): Ptr[Byte] =
+    runtime.fromRawPtr(Intrinsics.castObjectToRawPtr(a))
+
+  def fromPtr[A](ptr: Ptr[Byte]): A =
+    Intrinsics.castRawPtrToObject(runtime.toRawPtr(ptr)).asInstanceOf[A]
 }

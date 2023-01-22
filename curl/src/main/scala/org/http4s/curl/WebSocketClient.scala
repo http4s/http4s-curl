@@ -19,6 +19,12 @@ package org.http4s.curl
 import cats.Foldable
 import cats.effect.IO
 import cats.effect.Resource
+import cats.effect.SyncIO
+import cats.effect.implicits._
+import cats.effect.kernel.Ref
+import cats.effect.std.Dispatcher
+import cats.effect.std.Queue
+import cats.effect.std.QueueSource
 import cats.implicits._
 import org.http4s.Uri
 import org.http4s.client.websocket.WSFrame._
@@ -36,99 +42,264 @@ import internal.Utils.throwOnError
 
 private[curl] object WebSocketClient {
 
-  def get(respondToPings: Boolean = true): IO[Option[WSClient[IO]]] = IO.executionContext.flatMap {
-    case ec: CurlExecutorScheduler => IO.pure(apply(ec, respondToPings))
-    case _ => IO.raiseError(new RuntimeException("Not running on CurlExecutorScheduler"))
-  }
-
-  private val createHandler = Resource.make {
-    IO {
-      val handle = libcurl.curl_easy_init()
-      if (handle == null)
-        throw new RuntimeException("curl_easy_init")
-      handle
-    }
-  } { handle =>
-    IO(libcurl.curl_easy_cleanup(handle))
+  def get(recvBufferSize: Int = 100): IO[Option[WSClient[IO]]] = IO.executionContext.flatMap {
+    case ec: CurlExecutorScheduler => IO.pure(apply(ec, recvBufferSize))
+    case _ => IO.raiseError(InvalidRuntime)
   }
 
   final private val ws = Uri.Scheme.unsafeFromString("ws")
   final private val wss = Uri.Scheme.unsafeFromString("wss")
 
   private def setup(req: WSRequest, ec: CurlExecutorScheduler)(
-      handle: Ptr[libcurl.CURL]
-  )(implicit zone: Zone) =
-    IO {
-      println("start")
-      val scheme = req.uri.scheme.getOrElse(ws)
+      con: Connection
+  )(implicit zone: Zone) = IO {
+    val scheme = req.uri.scheme.getOrElse(ws)
 
-      if (scheme != ws && scheme != wss)
-        throw new RuntimeException(s"Websocket client can't handle ${scheme.value} scheme!")
+    if (scheme != ws && scheme != wss)
+      throw new RuntimeException(s"Websocket client can't handle ${scheme.value} scheme!")
 
-      val uri = req.uri.copy(scheme = Some(scheme))
+    val uri = req.uri.copy(scheme = Some(scheme))
 
-      throwOnError(
-        libcurl.curl_easy_setopt_customrequest(
-          handle,
-          libcurl_const.CURLOPT_CUSTOMREQUEST,
-          toCString(req.method.renderString),
-        )
+    // TODO move to config
+    throwOnError(
+      libcurl.curl_easy_setopt_verbose(
+        con.handler,
+        libcurl_const.CURLOPT_VERBOSE,
+        1L,
       )
+    )
 
-      throwOnError(
-        libcurl.curl_easy_setopt_connect_only(
-          handle,
-          libcurl_const.CURLOPT_CONNECT_ONLY,
-          2, // 2L is needed in order to work without callbacks
-        )
+    throwOnError(
+      libcurl.curl_easy_setopt_customrequest(
+        con.handler,
+        libcurl_const.CURLOPT_CUSTOMREQUEST,
+        toCString(req.method.renderString),
       )
+    )
 
-      throwOnError(
-        libcurl.curl_easy_setopt_websocket(
-          handle,
-          libcurl_const.CURLOPT_WS_OPTIONS,
-          libcurl_const.CURLWS_RAW_MODE,
-        )
+    // NOTE raw mode in curl needs decoding metadata in client side
+    // which is not implemented! so this client never receives a ping
+    // as all pings are always handled by libcurl itself
+    // throwOnError(
+    //   libcurl.curl_easy_setopt_websocket(
+    //     con.handler,
+    //     libcurl_const.CURLOPT_WS_OPTIONS,
+    //     libcurl_const.CURLWS_RAW_MODE,
+    //   )
+    // )
+
+    throwOnError(
+      libcurl.curl_easy_setopt_url(
+        con.handler,
+        libcurl_const.CURLOPT_URL,
+        toCString(uri.renderString),
       )
+    )
 
-      throwOnError(
-        libcurl.curl_easy_setopt_url(
-          handle,
-          libcurl_const.CURLOPT_URL,
-          toCString(uri.renderString),
-        )
+    // NOTE there is no need to handle object lifetime here,
+    // as Connection class and curl handler have the same lifetime
+    throwOnError {
+      libcurl.curl_easy_setopt_writedata(
+        con.handler,
+        libcurl_const.CURLOPT_WRITEDATA,
+        internal.Utils.toPtr(con),
       )
-
-      var headers: Ptr[libcurl.curl_slist] = null
-      req.headers
-        .foreach { header =>
-          headers = libcurl.curl_slist_append(headers, toCString(header.toString))
-        }
-      throwOnError(
-        libcurl.curl_easy_setopt_httpheader(handle, libcurl_const.CURLOPT_HTTPHEADER, headers)
-      )
-
-      ec.addHandle(handle, println)
     }
+
+    throwOnError {
+      libcurl.curl_easy_setopt_writefunction(
+        con.handler,
+        libcurl_const.CURLOPT_WRITEFUNCTION,
+        recvCallback(_, _, _, _),
+      )
+    }
+
+    var headers: Ptr[libcurl.curl_slist] = null
+    req.headers
+      .foreach { header =>
+        headers = libcurl.curl_slist_append(headers, toCString(header.toString))
+      }
+    throwOnError(
+      libcurl.curl_easy_setopt_httpheader(con.handler, libcurl_const.CURLOPT_HTTPHEADER, headers)
+    )
+
+    ec.addHandle(con.handler, println)
+  }
 
   implicit private class FrameMetaOps(private val meta: Ptr[libcurl.curl_ws_frame]) extends AnyVal {
     @inline def flags: CInt = !meta.at2
-    @inline def isFinal: Boolean = (flags & libcurl_const.CURLWS_CONT) != 0
+    @inline def isCont: Boolean = (flags & libcurl_const.CURLWS_CONT) != 0
+    @inline def isFinal: Boolean = !isCont
     @inline def isText: Boolean = (flags & libcurl_const.CURLWS_TEXT) != 0
     @inline def isBinary: Boolean = (flags & libcurl_const.CURLWS_BINARY) != 0
     @inline def isPing: Boolean = (flags & libcurl_const.CURLWS_PING) != 0
     @inline def isClose: Boolean = (flags & libcurl_const.CURLWS_CLOSE) != 0
+    @inline def offset: Long = !meta.at3
+    @inline def bytesLeft: Long = !meta.at4
+    @inline def noBytesLeft: Boolean = bytesLeft == 0
+
+    /** this meta is for the first callback call of to be received data
+      * Not to be confused with partial fragments!
+      * A fragment can be chunked despite it being partial or not.
+      */
+    @inline def isFirstChunk: Boolean = offset == 0 && !noBytesLeft
+
+    /** this meta is for a non chunked frame that has all the data available
+      * in this callback
+      */
+    @inline def isNotChunked: Boolean = offset == 0 && noBytesLeft
   }
 
-  def apply(ec: CurlExecutorScheduler, respondToPings: Boolean): Option[WSClient[IO]] =
+  sealed private trait ReceivingType extends Serializable with Product
+  private object ReceivingType {
+    case object Text extends ReceivingType
+    case object Binary extends ReceivingType
+    case object Ping extends ReceivingType
+  }
+
+  final private case class Receiving(
+      payload: ByteVector,
+      isFinal: Boolean,
+      frameType: ReceivingType,
+      left: CSize,
+  ) {
+    def add(buffer: Ptr[Byte], size: CSize): Receiving = {
+      val remainedAfter = left - size
+      assert(remainedAfter >= 0.toULong)
+      copy(
+        payload = ByteVector.fromPtr(buffer, size.toLong) ++ payload,
+        left = remainedAfter,
+      )
+    }
+    def toFrame: Option[WSFrame] =
+      Option.when(left.toLong == 0)(
+        this match {
+          case Receiving(payload, last, ReceivingType.Text, _) =>
+            val str = payload.decodeUtf8.getOrElse(throw InvalidTextFrame)
+            WSFrame.Text(str, last)
+          case Receiving(payload, last, ReceivingType.Binary, _) =>
+            WSFrame.Binary(payload, last)
+          case Receiving(payload, _, ReceivingType.Ping, _) =>
+            WSFrame.Ping(payload)
+        }
+      )
+  }
+  private object Receiving {
+    def apply(
+        buffer: Ptr[Byte],
+        size: CSize,
+        isFinal: Boolean,
+        frameType: ReceivingType,
+        left: CSize,
+    ): Receiving = new Receiving(
+      ByteVector.fromPtr(buffer, size.toLong),
+      isFinal,
+      frameType,
+      left,
+    )
+  }
+
+  /** libcurl write callback */
+  private def recvCallback(
+      buffer: Ptr[CChar],
+      size: CSize,
+      nmemb: CSize,
+      userdata: Ptr[Byte],
+  ): CSize =
+    internal.Utils
+      .fromPtr[Connection](userdata)
+      .onReceive(buffer, size, nmemb)
+
+  final private class Connection(
+      val handler: Ptr[libcurl.CURL],
+      receivedQ: Queue[IO, WSFrame],
+      receiving: Ref[SyncIO, Option[Receiving]],
+      dispatcher: Dispatcher[IO],
+  ) {
+
+    /** received frames */
+    val received: QueueSource[IO, WSFrame] = receivedQ
+
+    private def enqueue(wsframe: WSFrame): Unit =
+      dispatcher.unsafeRunAndForget(receivedQ.offer(wsframe))
+
+    /** libcurl write callback */
+    def onReceive(
+        buffer: Ptr[CChar],
+        size: CSize,
+        nmemb: CSize,
+    ): CSize = {
+      val realsize = size * nmemb
+      val meta = libcurl.curl_easy_ws_meta(handler)
+
+      println(
+        s"""{
+ "real": $realsize,
+ "final": ${meta.isFinal},
+ "offset": ${meta.offset},
+ "left": ${meta.bytesLeft}
+},"""
+      )
+
+      val toEnq = receiving
+        .modify {
+          case Some(value) =>
+            println(s"Existing: $value")
+            val next = value.add(buffer, realsize)
+
+            val optF = next.toFrame
+            if (optF.isDefined) (None, optF)
+            else (Some(next), None)
+          case None =>
+            println("New")
+            if (meta.isClose) {
+              (None, Some(WSFrame.Close(200, "Closed by server")))
+            } else {
+              val frameType =
+                if (meta.isText) ReceivingType.Text
+                else if (meta.isBinary) ReceivingType.Binary
+                else if (meta.isPing) ReceivingType.Ping
+                else throw InvalidFrame
+
+              val toRead = if (meta.isFirstChunk) 0.toULong else realsize
+              val recv = Receiving(buffer, toRead, meta.isFinal, frameType, meta.bytesLeft.toULong)
+              println(s"created: $recv")
+
+              val optF = recv.toFrame
+              if (optF.isDefined) (None, optF)
+              else (Some(recv), None)
+            }
+        }
+        .unsafeRunSync()
+
+      println(s"to enq: $toEnq")
+
+      toEnq.foreach(enqueue)
+
+      realsize
+    }
+  }
+
+  private def createConnection(recvBufferSize: Int) =
+    (
+      internal.Utils.createHandler,
+      Resource.eval(Queue.bounded[IO, WSFrame](recvBufferSize)),
+      Ref[SyncIO].of(Option.empty[Receiving]).to[IO].toResource,
+      Dispatcher.sequential[IO],
+    ).parMapN(new Connection(_, _, _, _))
+
+  def apply(
+      ec: CurlExecutorScheduler,
+      recvBufferSize: Int = 10,
+  ): Option[WSClient[IO]] =
     Option.when(CurlRuntime.isWebsocketAvailable) {
-      WSClient(respondToPings) { req =>
+      WSClient(true) { req =>
         internal.Utils.newZone
           .flatMap(implicit zone =>
-            createHandler
+            createConnection(recvBufferSize)
               .evalTap(setup(req, ec))
           )
-          .map(curl =>
+          .map(con =>
             new WSConnection[IO] {
 
               private def send(flags: CInt, data: ByteVector) =
@@ -139,7 +310,8 @@ private[curl] object WebSocketClient {
                     val size = data.size.toULong
 
                     throwOnError(
-                      libcurl.curl_easy_ws_send(curl, buffer, size, sent, size, flags.toUInt)
+                      libcurl
+                        .curl_easy_ws_send(con.handler, buffer, size, sent, 0.toULong, flags.toUInt)
                     )
                   }
                 }
@@ -171,37 +343,7 @@ private[curl] object WebSocketClient {
               override def sendMany[G[_]: Foldable, A <: WSFrame](wsfs: G[A]): IO[Unit] =
                 wsfs.traverse_(send)
 
-              override def receive: IO[Option[WSFrame]] = IO {
-                val bufSize = 1024.toULong
-                val buffer = stackalloc[Byte](bufSize)
-                val recv = stackalloc[CSize]()
-                val meta = stackalloc[libcurl.curl_ws_frame]()
-                var payload = ByteVector.empty
-
-                while ({
-                  throwOnError(
-                    libcurl.curl_easy_ws_recv(curl, buffer, bufSize, recv, meta)
-                  )
-
-                  payload = payload ++ ByteVector.fromPtr(buffer, (!recv).toLong)
-                  (!recv) == bufSize
-                }) {}
-
-                if (meta.isText) {
-                  val str = payload.decodeUtf8.getOrElse(throw InvalidTextFrame)
-                  Some(WSFrame.Text(str, meta.isFinal))
-                } else if (meta.isBinary) {
-                  Some(WSFrame.Binary(payload, meta.isFinal))
-                } else if (meta.isPing) {
-                  Some(WSFrame.Ping(payload))
-                } else if (meta.isClose) {
-                  Some(
-                    WSFrame.Close(1, "")
-                  ) // TODO what is a sane default? or where are the required data?
-                } else {
-                  None
-                }
-              }
+              override def receive: IO[Option[WSFrame]] = con.received.take.map(_.some)
 
               override def subprotocol: Option[String] = None
 
@@ -214,5 +356,10 @@ private[curl] object WebSocketClient {
   case object InvalidTextFrame extends Exception("Text frame data must be valid utf8") with Error
   case object PartialFragmentFrame
       extends Exception("Partial fragments are not supported by this driver")
+      with Error
+  case object InvalidFrame extends Exception("Text frame data must be valid utf8") with Error
+  case object InvalidRuntime
+      extends RuntimeException("Not running on CurlExecutorScheduler")
+      with Error
 
 }
