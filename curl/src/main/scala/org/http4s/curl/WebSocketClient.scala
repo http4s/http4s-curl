@@ -42,6 +42,7 @@ import scala.scalanative.unsigned._
 
 import internal.Utils.throwOnError
 
+import org.http4s.curl.internal.Utils
 private[curl] object WebSocketClient {
 
   def get(recvBufferSize: Int = 100): IO[Option[WSClient[IO]]] = IO.executionContext.flatMap {
@@ -61,15 +62,6 @@ private[curl] object WebSocketClient {
       throw new RuntimeException(s"Websocket client can't handle ${scheme.value} scheme!")
 
     val uri = req.uri.copy(scheme = Some(scheme))
-
-    // TODO move to config
-    throwOnError(
-      libcurl.curl_easy_setopt_verbose(
-        con.handler,
-        libcurl_const.CURLOPT_VERBOSE,
-        1L,
-      )
-    )
 
     throwOnError(
       libcurl.curl_easy_setopt_customrequest(
