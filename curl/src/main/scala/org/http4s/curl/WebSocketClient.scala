@@ -129,7 +129,7 @@ private[curl] object WebSocketClient {
       libcurl.curl_easy_setopt_httpheader(con.handler, libcurl_const.CURLOPT_HTTPHEADER, headers)
     )
 
-    ec.addHandle(con.handler, _ => ())
+    ec.addHandle(con.handler, con.onTerminated)
   }
 
   implicit private class FrameMetaOps(private val meta: Ptr[libcurl.curl_ws_frame]) extends AnyVal {
@@ -231,17 +231,17 @@ private[curl] object WebSocketClient {
 
   final private class Connection(
       val handler: Ptr[libcurl.CURL],
-      receivedQ: Queue[IO, WSFrame],
+      receivedQ: Queue[IO, Option[WSFrame]],
       receiving: Ref[SyncIO, Option[Receiving]],
       established: Deferred[IO, Unit],
       dispatcher: Dispatcher[IO],
   ) {
 
     /** received frames */
-    val received: QueueSource[IO, WSFrame] = receivedQ
+    val received: QueueSource[IO, Option[WSFrame]] = receivedQ
 
     private def enqueue(wsframe: WSFrame): Unit =
-      dispatcher.unsafeRunAndForget(receivedQ.offer(wsframe))
+      dispatcher.unsafeRunAndForget(receivedQ.offer(wsframe.some))
 
     /** libcurl write callback */
     def onReceive(
@@ -288,6 +288,16 @@ private[curl] object WebSocketClient {
 
     def onEstablished(): Unit = dispatcher.unsafeRunAndForget(established.complete(()))
 
+    def onTerminated(result: Either[Throwable, Unit]): Unit = {
+      dispatcher.unsafeRunAndForget(receivedQ.offer(None))
+      result match {
+        case Left(err) =>
+          Console.err.println("Websocket connection terminated!")
+          err.printStackTrace(Console.err)
+        case _ => ()
+      }
+    }
+
     def send(flags: CInt, data: ByteVector): IO[Unit] =
       established.get >>
         internal.Utils.newZone.use { implicit zone =>
@@ -307,7 +317,7 @@ private[curl] object WebSocketClient {
   private def createConnection(recvBufferSize: Int) =
     (
       internal.Utils.createHandler,
-      Resource.eval(Queue.bounded[IO, WSFrame](recvBufferSize)),
+      Resource.eval(Queue.bounded[IO, Option[WSFrame]](recvBufferSize)),
       Ref[SyncIO].of(Option.empty[Receiving]).to[IO].toResource,
       IO.deferred[Unit].toResource,
       Dispatcher.sequential[IO],
@@ -354,7 +364,7 @@ private[curl] object WebSocketClient {
               override def sendMany[G[_]: Foldable, A <: WSFrame](wsfs: G[A]): IO[Unit] =
                 wsfs.traverse_(send)
 
-              override def receive: IO[Option[WSFrame]] = con.received.take.map(_.some)
+              override def receive: IO[Option[WSFrame]] = con.received.take
 
               override def subprotocol: Option[String] = None
 
