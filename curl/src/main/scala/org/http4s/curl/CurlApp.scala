@@ -23,6 +23,7 @@ import org.http4s.client.Client
 import org.http4s.client.websocket.WSClient
 import org.http4s.curl.unsafe.CurlExecutorScheduler
 import org.http4s.curl.unsafe.CurlRuntime
+import org.http4s.curl.websocket.CurlWSClient
 
 trait CurlApp extends IOApp {
 
@@ -46,7 +47,7 @@ trait CurlApp extends IOApp {
 
   /** gets websocket client if current libcurl environment supports it */
   final def websocket(recvBufferSize: Int = 100): Option[WSClient[IO]] =
-    WebSocketClient(scheduler, recvBufferSize)
+    CurlWSClient(scheduler, recvBufferSize)
 
   /** gets websocket client if current libcurl environment supports it throws an error otherwise */
   final def websocketOrError(recvBufferSize: Int = 100): WSClient[IO] =

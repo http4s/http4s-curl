@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.http4s.curl
+package org.http4s.curl.websocket
 
 import cats.Foldable
 import cats.effect.IO
@@ -30,6 +30,8 @@ import cats.implicits._
 import org.http4s.Uri
 import org.http4s.client.websocket.WSFrame._
 import org.http4s.client.websocket._
+import org.http4s.curl.internal.Utils
+import org.http4s.curl.internal.Utils.throwOnError
 import org.http4s.curl.unsafe.CurlExecutorScheduler
 import org.http4s.curl.unsafe.CurlRuntime
 import org.http4s.curl.unsafe.libcurl
@@ -40,8 +42,7 @@ import scala.annotation.unused
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
 
-import internal.Utils.throwOnError
-private[curl] object WebSocketClient {
+private[curl] object CurlWSClient {
 
   def get(recvBufferSize: Int = 100): IO[Option[WSClient[IO]]] = IO.executionContext.flatMap {
     case ec: CurlExecutorScheduler => IO.pure(apply(ec, recvBufferSize))
@@ -94,7 +95,7 @@ private[curl] object WebSocketClient {
       libcurl.curl_easy_setopt_writedata(
         con.handler,
         libcurl_const.CURLOPT_WRITEDATA,
-        internal.Utils.toPtr(con),
+        Utils.toPtr(con),
       )
     }
 
@@ -109,7 +110,7 @@ private[curl] object WebSocketClient {
     libcurl.curl_easy_setopt_headerdata(
       con.handler,
       libcurl_const.CURLOPT_HEADERDATA,
-      internal.Utils.toPtr(con),
+      Utils.toPtr(con),
     )
 
     throwOnError {
@@ -212,7 +213,7 @@ private[curl] object WebSocketClient {
       nmemb: CSize,
       userdata: Ptr[Byte],
   ): CSize =
-    internal.Utils
+    Utils
       .fromPtr[Connection](userdata)
       .onReceive(buffer, size, nmemb)
 
@@ -222,7 +223,7 @@ private[curl] object WebSocketClient {
       nitems: CSize,
       userdata: Ptr[Byte],
   ): CSize = {
-    internal.Utils
+    Utils
       .fromPtr[Connection](userdata)
       .onEstablished()
 
@@ -300,7 +301,7 @@ private[curl] object WebSocketClient {
 
     def send(flags: CInt, data: ByteVector): IO[Unit] =
       established.get >>
-        internal.Utils.newZone.use { implicit zone =>
+        Utils.newZone.use { implicit zone =>
           IO {
             val sent = stackalloc[CSize]()
             val buffer = data.toPtr
@@ -316,7 +317,7 @@ private[curl] object WebSocketClient {
 
   private def createConnection(recvBufferSize: Int) =
     (
-      internal.Utils.createHandler,
+      Utils.createHandler,
       Resource.eval(Queue.bounded[IO, Option[WSFrame]](recvBufferSize)),
       Ref[SyncIO].of(Option.empty[Receiving]).to[IO].toResource,
       IO.deferred[Unit].toResource,
@@ -329,7 +330,7 @@ private[curl] object WebSocketClient {
   ): Option[WSClient[IO]] =
     Option.when(CurlRuntime.isWebsocketAvailable && CurlRuntime.curlVersionNumber >= 0x75700) {
       WSClient(true) { req =>
-        internal.Utils.newZone
+        Utils.newZone
           .flatMap(implicit zone =>
             createConnection(recvBufferSize)
               .evalTap(setup(req, ec))
