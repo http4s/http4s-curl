@@ -41,8 +41,6 @@ import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
 
 import internal.Utils.throwOnError
-
-import org.http4s.curl.internal.Utils
 private[curl] object WebSocketClient {
 
   def get(recvBufferSize: Int = 100): IO[Option[WSClient[IO]]] = IO.executionContext.flatMap {
@@ -319,7 +317,7 @@ private[curl] object WebSocketClient {
       ec: CurlExecutorScheduler,
       recvBufferSize: Int = 10,
   ): Option[WSClient[IO]] =
-    Option.when(CurlRuntime.isWebsocketAvailable) {
+    Option.when(CurlRuntime.isWebsocketAvailable && CurlRuntime.curlVersionNumber >= 0x75700) {
       WSClient(true) { req =>
         internal.Utils.newZone
           .flatMap(implicit zone =>

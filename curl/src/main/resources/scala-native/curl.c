@@ -18,4 +18,8 @@ const char * const * org_http4s_curl_get_protocols(){
   return curl_version_info(CURLVERSION_NOW) -> protocols;
 }
 
+unsigned int org_http4s_curl_get_version_num(){
+  return curl_version_info(CURLVERSION_NOW) -> version_num;
+}
+
 #endif // has_include

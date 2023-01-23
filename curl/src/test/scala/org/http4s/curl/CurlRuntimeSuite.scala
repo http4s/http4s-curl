@@ -37,6 +37,11 @@ class CurlRuntimeSuite extends CatsEffectSuite {
     assertEquals(CurlRuntime.curlVersion.take(prefix.length), prefix)
   }
 
+  test("curl version number") {
+    assert(CurlRuntime.curlVersionNumber > 0x070000)
+    assert(CurlRuntime.curlVersionTriple._1 == 7)
+  }
+
   test("curl protocols") {
     val protocols = CurlRuntime.protocols
     assert(protocols.contains("http"))

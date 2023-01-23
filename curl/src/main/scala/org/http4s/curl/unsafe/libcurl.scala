@@ -134,6 +134,9 @@ private[curl] object libcurl {
   @name("org_http4s_curl_get_protocols")
   def curl_protocols_info(): Ptr[CString] = extern
 
+  @name("org_http4s_curl_get_version_num")
+  def curl_version_number(): CInt = extern
+
   def curl_multi_add_handle(multi_handle: Ptr[CURLM], curl_handle: Ptr[CURL]): CURLMcode = extern
 
   def curl_multi_remove_handle(multi_handle: Ptr[CURLM], curl_handle: Ptr[CURL]): CURLMcode = extern

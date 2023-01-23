@@ -53,6 +53,7 @@ trait CurlApp extends IOApp {
     websocket(recvBufferSize).getOrElse(
       throw new RuntimeException(
         """Websocket is not supported in this environment!
+You need to have curl with version 7.87.0 or higher with websockets enabled.
 Note that websocket support in curl is experimental and is not available by default,
 so you need to either build it with websocket support or use an already built libcurl with websocket support."""
       )
