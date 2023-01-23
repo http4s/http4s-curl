@@ -1,7 +1,7 @@
 {
   inputs = {
     typelevel-nix.url = "github:typelevel/typelevel-nix";
-    nixpkgs.follows = "typelevel-nix/nixpkgs";
+    nixpkgs.url = "nixpkgs/nixos-unstable"; #NOTE we need latest curl
     flake-utils.follows = "typelevel-nix/flake-utils";
   };
 

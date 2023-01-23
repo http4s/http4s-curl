@@ -139,7 +139,7 @@ private[curl] object WebSocketClient {
       libcurl.curl_easy_setopt_httpheader(con.handler, libcurl_const.CURLOPT_HTTPHEADER, headers)
     )
 
-    ec.addHandle(con.handler, println)
+    ec.addHandle(con.handler, _ => ())
   }
 
   implicit private class FrameMetaOps(private val meta: Ptr[libcurl.curl_ws_frame]) extends AnyVal {
@@ -183,7 +183,7 @@ private[curl] object WebSocketClient {
       val remainedAfter = left - size
       assert(remainedAfter >= 0.toULong)
       copy(
-        payload = ByteVector.fromPtr(buffer, size.toLong) ++ payload,
+        payload = payload ++ ByteVector.fromPtr(buffer, size.toLong),
         left = remainedAfter,
       )
     }
@@ -261,27 +261,17 @@ private[curl] object WebSocketClient {
     ): CSize = {
       val realsize = size * nmemb
       val meta = libcurl.curl_easy_ws_meta(handler)
-
-      println(
-        s"""{
- "real": $realsize,
- "final": ${meta.isFinal},
- "offset": ${meta.offset},
- "left": ${meta.bytesLeft}
-},"""
-      )
+      // val toRead = if (meta.isFirstChunk) 0.toULong else realsize
 
       val toEnq = receiving
         .modify {
           case Some(value) =>
-            println(s"Existing: $value")
             val next = value.add(buffer, realsize)
 
             val optF = next.toFrame
             if (optF.isDefined) (None, optF)
             else (Some(next), None)
           case None =>
-            println("New")
             if (meta.isClose) {
               (None, Some(WSFrame.Close(200, "Closed by server")))
             } else {
@@ -291,9 +281,8 @@ private[curl] object WebSocketClient {
                 else if (meta.isPing) ReceivingType.Ping
                 else throw InvalidFrame
 
-              val toRead = if (meta.isFirstChunk) 0.toULong else realsize
-              val recv = Receiving(buffer, toRead, meta.isFinal, frameType, meta.bytesLeft.toULong)
-              println(s"created: $recv")
+              val recv =
+                Receiving(buffer, realsize, meta.isFinal, frameType, meta.bytesLeft.toULong)
 
               val optF = recv.toFrame
               if (optF.isDefined) (None, optF)
@@ -301,8 +290,6 @@ private[curl] object WebSocketClient {
             }
         }
         .unsafeRunSync()
-
-      println(s"to enq: $toEnq")
 
       toEnq.foreach(enqueue)
 

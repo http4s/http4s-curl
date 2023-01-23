@@ -15,6 +15,7 @@
  */
 
 import cats.effect._
+import org.http4s.Uri
 import org.http4s.client.websocket.WSFrame
 import org.http4s.client.websocket.WSRequest
 import org.http4s.curl.CurlApp
@@ -22,8 +23,21 @@ import org.http4s.implicits._
 
 object WSExample extends CurlApp.Simple {
 
-  // private val fastData = uri"wss://stream.binance.com/ws/btcusdt@aggTrade"
-  // private val largeData = uri"wss://stream.binance.com/ws/!ticker@arr"
+  val fastData: Uri = uri"wss://stream.binance.com/ws/btcusdt@aggTrade"
+  val largeData: Uri = uri"wss://stream.binance.com/ws/!ticker@arr"
+  private val websocket = largeData
+
+  def run: IO[Unit] = websocketOrError()
+    .connectHighLevel(WSRequest(websocket))
+    .use { client =>
+      IO.println("ready!") >>
+        client.receiveStream.printlns.compile.drain
+    }
+
+}
+
+object WSEchoExample extends CurlApp.Simple {
+
   private val echo = uri"wss://ws.postman-echo.com/raw"
 
   def run: IO[Unit] = websocketOrError()
