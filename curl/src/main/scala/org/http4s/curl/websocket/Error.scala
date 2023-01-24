@@ -16,7 +16,7 @@
 
 package org.http4s.curl.websocket
 
-sealed trait Error extends Throwable with Serializable with Product
+sealed trait Error extends Exception with Serializable with Product
 case object InvalidTextFrame extends Exception("Text frame data must be valid utf8") with Error
 case object PartialFragmentFrame
     extends Exception("Partial fragments are not supported by this driver")

@@ -63,7 +63,7 @@ private[curl] object libcurl_const {
   final val CURL_READFUNC_PAUSE = 0x10000001L
 
   // constant flags from websocket.h
-  final val CURLWS_TEXT: CInt = 1 << 0
+  final val CURLWS_TEXT = 1 << 0
   final val CURLWS_BINARY: CInt = 1 << 1
   final val CURLWS_CONT: CInt = 1 << 2
   final val CURLWS_CLOSE: CInt = 1 << 3

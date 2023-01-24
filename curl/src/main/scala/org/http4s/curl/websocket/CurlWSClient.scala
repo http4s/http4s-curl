@@ -44,7 +44,7 @@ private[curl] object CurlWSClient {
     val scheme = req.uri.scheme.getOrElse(ws)
 
     if (scheme != ws && scheme != wss)
-      throw new RuntimeException(s"Websocket client can't handle ${scheme.value} scheme!")
+      throw new IllegalArgumentException(s"Websocket client can't handle ${scheme.value} scheme!")
 
     val uri = req.uri.copy(scheme = Some(scheme))
 
