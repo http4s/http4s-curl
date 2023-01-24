@@ -28,6 +28,7 @@ import org.http4s.Request
 import org.http4s.client.Client
 import org.http4s.curl.unsafe.CurlRuntime
 import org.http4s.syntax.all._
+import org.http4s.Status
 
 class CurlClientSuite extends CatsEffectSuite {
 
@@ -39,10 +40,24 @@ class CurlClientSuite extends CatsEffectSuite {
 
   clientFixture.test("3 get echos") { client =>
     client
-      .expect[String]("https://postman-echo.com/get")
+      .expect[String]("http://localhost:8080/http")
       .map(_.nonEmpty)
       .assert
       .parReplicateA_(3)
+  }
+
+  clientFixture.test("500") { client =>
+    client
+      .statusFromString("http://localhost:8080/http/500")
+      .assertEquals(Status.InternalServerError)
+  }
+
+  clientFixture.test("unexpected") { client =>
+    client
+      .expect[String]("http://localhost:8080/http/500")
+      .attempt
+      .map(_.isLeft)
+      .assert
   }
 
   clientFixture.test("3 post echos") { client =>
@@ -53,7 +68,7 @@ class CurlClientSuite extends CatsEffectSuite {
           val msg = s"hello postman $s"
           client
             .expect[String](
-              Request[IO](POST, uri = uri"https://postman-echo.com/post").withEntity(msg)
+              Request[IO](POST, uri = uri"http://localhost:8080/http/echo").withEntity(msg)
             )
             .map(_.contains(msg))
             .assert

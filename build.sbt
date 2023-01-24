@@ -62,7 +62,8 @@ ThisBuild / envVars ++= {
   else Map.empty[String, String]
 }
 
-lazy val root = project.in(file(".")).enablePlugins(NoPublishPlugin).aggregate(curl, example)
+lazy val root =
+  project.in(file(".")).enablePlugins(NoPublishPlugin).aggregate(curl, example, testServer)
 
 lazy val curl = project
   .in(file("curl"))
@@ -84,4 +85,17 @@ lazy val example = project
     libraryDependencies ++= Seq(
       "org.http4s" %%% "http4s-circe" % http4sVersion
     )
+  )
+
+lazy val testServer = project
+  .in(file("test-server"))
+  .enablePlugins(NoPublishPlugin)
+  .settings(
+    libraryDependencies ++= Seq(
+      "org.typelevel" %% "cats-effect" % catsEffectVersion,
+      "org.http4s" %% "http4s-dsl" % http4sVersion,
+      "org.http4s" %% "http4s-ember-server" % http4sVersion,
+      "ch.qos.logback" % "logback-classic" % "1.2.6",
+    ),
+    fork := true,
   )

@@ -52,7 +52,10 @@ final private class Connection private (
 
   private def enqueue(wsframe: WSFrame): Unit =
     dispatcher.unsafeRunAndForget(
-      breaker.drain >> receivedQ.offer(wsframe.some)
+      breaker.drain *> (wsframe match {
+        case _: WSFrame.Close => receivedQ.offer(wsframe.some) *> receivedQ.offer(None)
+        case _ => receivedQ.offer(wsframe.some)
+      })
     )
 
   /** libcurl write callback */
@@ -74,7 +77,7 @@ final private class Connection private (
           else (Some(next), None)
         case None =>
           if (meta.isClose) {
-            (None, Some(WSFrame.Close(200, "Closed by server")))
+            (None, Some(WSFrame.Close(200, "")))
           } else {
             val frameType =
               if (meta.isText) ReceivingType.Text
@@ -100,7 +103,9 @@ final private class Connection private (
   def onEstablished(): Unit = dispatcher.unsafeRunAndForget(established.complete(()))
 
   def onTerminated(result: Either[Throwable, Unit]): Unit =
-    dispatcher.unsafeRunAndForget(receivedQ.offer(None) *> IO.fromEither(result))
+    dispatcher.unsafeRunAndForget(
+      receivedQ.offer(None) *> IO.fromEither(result)
+    )
 
   def send(flags: CInt, data: ByteVector): IO[Unit] =
     established.get >>
@@ -149,11 +154,11 @@ private object Connection {
       resumeOn: Int,
       verbose: Boolean,
   ): Resource[IO, Connection] = for {
-    handler <- Utils.createHandler
+    dispatcher <- Dispatcher.sequential[IO]
     recvQ <- Queue.bounded[IO, Option[WSFrame]](recvBufferSize).toResource
     recv <- Ref[SyncIO].of(Option.empty[Receiving]).to[IO].toResource
     estab <- IO.deferred[Unit].toResource
-    dispatcher <- Dispatcher.sequential[IO]
+    handler <- Utils.createHandler
     brk <- Breaker(
       handler,
       capacity = recvBufferSize,

@@ -20,34 +20,43 @@ import org.http4s.client.websocket.WSFrame
 import org.http4s.client.websocket.WSRequest
 import org.http4s.curl.CurlApp
 import org.http4s.implicits._
+import cats.implicits._
+
+import scala.concurrent.duration._
 
 object WSExample extends CurlApp.Simple {
 
   val fastData: Uri = uri"wss://stream.binance.com/ws/btcusdt@aggTrade"
   val largeData: Uri = uri"wss://stream.binance.com/ws/!ticker@arr"
-  private val websocket = largeData
+  private val local = uri"ws://localhost:8080/ws/large"
+  private val websocket = local
 
-  def run: IO[Unit] = websocketOrError()
+  def run: IO[Unit] = websocketOrError(verbose = true)
     .connectHighLevel(WSRequest(websocket))
     .use { client =>
       IO.println("ready!") >>
-        client.receiveStream.printlns.compile.drain
+        client.receiveStream.foreach(_ => IO.println("> frame").delayBy(50.millis)).compile.drain
     }
 
 }
 
 object WSEchoExample extends CurlApp.Simple {
 
-  private val echo = uri"wss://ws.postman-echo.com/raw"
+  // private val echo = uri"wss://ws.postman-echo.com/raw"
+  private val echo = uri"ws://localhost:8080/ws/echo"
 
   def run: IO[Unit] = websocketOrError()
     .connectHighLevel(WSRequest(echo))
     .use { client =>
       val send: IO[Unit] =
-        IO.println("sending ...") >> client.send(WSFrame.Text("hello"))
+        IO.println("sending ...") >> client.send(WSFrame.Text("hello")).parReplicateA_(4)
 
       IO.println("ready!") >>
-        client.receiveStream.printlns.compile.drain
+        client.receiveStream
+          .take(4)
+          .printlns
+          .compile
+          .drain
           .both(send)
           .void
     }

@@ -16,6 +16,8 @@
 
 package org.http4s.curl.unsafe
 
+import cats.effect.IO
+import cats.effect.kernel.Resource
 import cats.effect.unsafe.PollingExecutorScheduler
 
 import scala.collection.mutable
@@ -38,6 +40,7 @@ final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM],
         if (timeoutIsInf) Int.MaxValue else timeout.toMillis.min(Int.MaxValue).toInt
 
       if (timeout > Duration.Zero) {
+
         val pollCode = libcurl.curl_multi_poll(
           multiHandle,
           null,
@@ -60,8 +63,10 @@ final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM],
         while ({
           val msgsInQueue = stackalloc[CInt]()
           val info = libcurl.curl_multi_info_read(multiHandle, msgsInQueue)
+
           if (info != null) {
-            if (libcurl.curl_CURLMsg_msg(info) == libcurl_const.CURLMSG_DONE) {
+            val curMsg = libcurl.curl_CURLMsg_msg(info)
+            if (curMsg == libcurl_const.CURLMSG_DONE) {
               val handle = libcurl.curl_CURLMsg_easy_handle(info)
               callbacks.remove(handle).foreach { cb =>
                 val result = libcurl.curl_CURLMsg_data_result(info)
@@ -84,12 +89,37 @@ final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM],
     }
   }
 
+  /** Adds a curl handler that is expected to terminate
+    * like a normal http request
+    *
+    * IMPORTANT NOTE: if you add a transfer that does not terminate (e.g. websocket) using this method,
+    * application might hang, because those transfer don't seem to change state,
+    * so it's not distinguishable whether they are finished or have other work to do
+    *
+    * @param handle curl easy handle to add
+    * @param cb callback to run when this handler has finished its transfer
+    */
   def addHandle(handle: Ptr[libcurl.CURL], cb: Either[Throwable, Unit] => Unit): Unit = {
     val code = libcurl.curl_multi_add_handle(multiHandle, handle)
     if (code != 0)
       throw new RuntimeException(s"curl_multi_add_handle: $code")
     callbacks(handle) = cb
   }
+
+  /** Add a curl handle for a transfer that doesn't finish e.g. a websocket transfer
+    * it adds a handle to multi handle, and removes it when it goes out of scope
+    * so no dangling handler will remain in multi handler
+    * callback is called when the transfer is terminated or goes out of scope
+    *
+    * @param handle curl easy handle to add
+    * @param cb callback to run if this handler is terminated unexpectedly
+    */
+  def addHandleR(
+      handle: Ptr[libcurl.CURL],
+      cb: Either[Throwable, Unit] => Unit,
+  ): Resource[IO, Unit] = Resource.make(IO(addHandle(handle, cb)))(_ =>
+    IO(callbacks.remove(handle).foreach(_(Right(()))))
+  )
 }
 
 private[curl] object CurlExecutorScheduler {
