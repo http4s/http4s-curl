@@ -99,15 +99,8 @@ final private class Connection private (
 
   def onEstablished(): Unit = dispatcher.unsafeRunAndForget(established.complete(()))
 
-  def onTerminated(result: Either[Throwable, Unit]): Unit = {
-    dispatcher.unsafeRunAndForget(receivedQ.offer(None))
-    result match {
-      case Left(err) =>
-        Console.err.println("Websocket connection terminated!")
-        err.printStackTrace(Console.err)
-      case _ => ()
-    }
-  }
+  def onTerminated(result: Either[Throwable, Unit]): Unit =
+    dispatcher.unsafeRunAndForget(receivedQ.offer(None) *> IO.fromEither(result))
 
   def send(flags: CInt, data: ByteVector): IO[Unit] =
     established.get >>
