@@ -24,7 +24,6 @@ import cats.effect.kernel.Deferred
 import cats.effect.kernel.Ref
 import cats.effect.std.Dispatcher
 import cats.effect.std.Queue
-import cats.effect.std.QueueSource
 import cats.implicits._
 import org.http4s.client.websocket._
 import org.http4s.curl.internal.Utils
@@ -44,13 +43,17 @@ final private class Connection private (
     receiving: Ref[SyncIO, Option[Receiving]],
     established: Deferred[IO, Unit],
     dispatcher: Dispatcher[IO],
+    breaker: Breaker,
 ) {
 
   /** received frames */
-  val received: QueueSource[IO, Option[WSFrame]] = receivedQ
+  def receive: IO[Option[WSFrame]] =
+    receivedQ.take <* breaker.feed
 
   private def enqueue(wsframe: WSFrame): Unit =
-    dispatcher.unsafeRunAndForget(receivedQ.offer(wsframe.some))
+    dispatcher.unsafeRunAndForget(
+      breaker.drain >> receivedQ.offer(wsframe.some)
+    )
 
   /** libcurl write callback */
   def onReceive(
@@ -60,7 +63,6 @@ final private class Connection private (
   ): CSize = {
     val realsize = size * nmemb
     val meta = libcurl.curl_easy_ws_meta(handler)
-    // val toRead = if (meta.isFirstChunk) 0.toULong else realsize
 
     val toEnq = receiving
       .modify {
@@ -148,14 +150,33 @@ private object Connection {
     @inline def isNotChunked: Boolean = offset == 0 && noBytesLeft
   }
 
-  def apply(recvBufferSize: Int): Resource[IO, Connection] =
-    (
-      Utils.createHandler,
-      Resource.eval(Queue.bounded[IO, Option[WSFrame]](recvBufferSize)),
-      Ref[SyncIO].of(Option.empty[Receiving]).to[IO].toResource,
-      IO.deferred[Unit].toResource,
-      Dispatcher.sequential[IO],
-    ).parMapN(new Connection(_, _, _, _, _))
+  def apply(
+      recvBufferSize: Int,
+      pauseOn: Int,
+      resumeOn: Int,
+      verbose: Boolean,
+  ): Resource[IO, Connection] = for {
+    handler <- Utils.createHandler
+    recvQ <- Queue.bounded[IO, Option[WSFrame]](recvBufferSize).toResource
+    recv <- Ref[SyncIO].of(Option.empty[Receiving]).to[IO].toResource
+    estab <- IO.deferred[Unit].toResource
+    dispatcher <- Dispatcher.sequential[IO]
+    brk <- Breaker(
+      handler,
+      capacity = recvBufferSize,
+      close = resumeOn,
+      open = pauseOn,
+      verbose,
+    ).toResource
+  } yield new Connection(
+    handler,
+    recvQ,
+    recv,
+    estab,
+    dispatcher,
+    brk,
+  )
+
 }
 
 sealed private trait ReceivingType extends Serializable with Product

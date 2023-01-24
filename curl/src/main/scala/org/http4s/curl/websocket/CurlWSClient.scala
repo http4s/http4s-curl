@@ -35,15 +35,10 @@ import scala.scalanative.unsafe._
 
 private[curl] object CurlWSClient {
 
-  def get(recvBufferSize: Int = 100): IO[Option[WSClient[IO]]] = IO.executionContext.flatMap {
-    case ec: CurlExecutorScheduler => IO.pure(apply(ec, recvBufferSize))
-    case _ => IO.raiseError(InvalidRuntime)
-  }
-
   final private val ws = Uri.Scheme.unsafeFromString("ws")
   final private val wss = Uri.Scheme.unsafeFromString("wss")
 
-  private def setup(req: WSRequest, ec: CurlExecutorScheduler)(
+  private def setup(req: WSRequest, ec: CurlExecutorScheduler, verbose: Boolean)(
       con: Connection
   )(implicit zone: Zone) = IO {
     val scheme = req.uri.scheme.getOrElse(ws)
@@ -60,6 +55,15 @@ private[curl] object CurlWSClient {
         toCString(req.method.renderString),
       )
     )
+
+    if (verbose)
+      throwOnError(
+        libcurl.curl_easy_setopt_verbose(
+          con.handler,
+          libcurl_const.CURLOPT_VERBOSE,
+          1L,
+        )
+      )
 
     // NOTE raw mode in curl needs decoding metadata in client side
     // which is not implemented! so this client never receives a ping
@@ -150,14 +154,17 @@ private[curl] object CurlWSClient {
 
   def apply(
       ec: CurlExecutorScheduler,
-      recvBufferSize: Int = 10,
+      recvBufferSize: Int,
+      pauseOn: Int,
+      resumeOn: Int,
+      verbose: Boolean,
   ): Option[WSClient[IO]] =
     Option.when(CurlRuntime.isWebsocketAvailable && CurlRuntime.curlVersionNumber >= 0x75700) {
       WSClient(true) { req =>
         Utils.newZone
           .flatMap(implicit zone =>
-            Connection(recvBufferSize)
-              .evalTap(setup(req, ec))
+            Connection(recvBufferSize, pauseOn, resumeOn, verbose)
+              .evalTap(setup(req, ec, verbose))
           )
           .map(con =>
             new WSConnection[IO] {
@@ -189,7 +196,7 @@ private[curl] object CurlWSClient {
               override def sendMany[G[_]: Foldable, A <: WSFrame](wsfs: G[A]): IO[Unit] =
                 wsfs.traverse_(send)
 
-              override def receive: IO[Option[WSFrame]] = con.received.take
+              override def receive: IO[Option[WSFrame]] = con.receive
 
               override def subprotocol: Option[String] = None
 

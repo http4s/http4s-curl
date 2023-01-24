@@ -46,12 +46,21 @@ trait CurlApp extends IOApp {
   final lazy val curlClient: Client[IO] = CurlClient(scheduler)
 
   /** gets websocket client if current libcurl environment supports it */
-  final def websocket(recvBufferSize: Int = 100): Option[WSClient[IO]] =
-    CurlWSClient(scheduler, recvBufferSize)
+  final def websocket(
+      recvBufferSize: Int = 100,
+      verbose: Boolean = false,
+  ): Option[WSClient[IO]] =
+    CurlWSClient(
+      scheduler,
+      recvBufferSize,
+      pauseOn = recvBufferSize / 10,
+      resumeOn = (recvBufferSize * 0.3).floor.toInt,
+      verbose = verbose,
+    )
 
   /** gets websocket client if current libcurl environment supports it throws an error otherwise */
-  final def websocketOrError(recvBufferSize: Int = 100): WSClient[IO] =
-    websocket(recvBufferSize).getOrElse(
+  final def websocketOrError(recvBufferSize: Int = 100, verbose: Boolean = false): WSClient[IO] =
+    websocket(recvBufferSize, verbose).getOrElse(
       throw new RuntimeException(
         """Websocket is not supported in this environment!
 You need to have curl with version 7.87.0 or higher with websockets enabled.
