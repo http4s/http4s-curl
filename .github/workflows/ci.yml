@@ -94,6 +94,12 @@ jobs:
           vcpkg install --triplet x64-windows curl
           cp "C:\vcpkg\installed\x64-windows\lib\libcurl.lib" "C:\vcpkg\installed\x64-windows\lib\curl.lib"
 
+      - name: Spawn test server
+        shell: bash
+        run: |
+          sbt testServer/run &> /dev/null &
+          echo $! > server.pid
+
       - name: Check that workflows are up to date
         shell: bash
         run: sbt githubWorkflowCheck
@@ -122,15 +128,21 @@ jobs:
         shell: bash
         run: sbt '++ ${{ matrix.scala }}' 'scalafixAll --check'
 
+      - name: kill test server
+        shell: bash
+        run: |
+          cat server.pid | xargs kill
+          rm server.pid
+
       - name: Make target directories
         if: github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
         shell: bash
-        run: mkdir -p target curl/target example/target project/target
+        run: mkdir -p target curl/target example/target test-server/target project/target
 
       - name: Compress target directories
         if: github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
         shell: bash
-        run: tar cf targets.tar target curl/target example/target project/target
+        run: tar cf targets.tar target curl/target example/target test-server/target project/target
 
       - name: Upload target directories
         if: github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')

@@ -14,6 +14,20 @@ ThisBuild / githubWorkflowOSes :=
 ThisBuild / githubWorkflowBuildMatrixExclusions +=
   MatrixExclude(Map("scala" -> scala3, "os" -> "windows-2022")) // dottydoc bug
 
+lazy val setupTestServer =
+  WorkflowStep.Run(
+    List(
+      "sbt testServer/run &> /dev/null &",
+      s"echo $$! > server.pid",
+    ),
+    name = Some("Spawn test server"),
+  )
+lazy val destroyTestServer =
+  WorkflowStep.Run(
+    List("cat server.pid | xargs kill", "rm server.pid"),
+    name = Some("kill test server"),
+  )
+
 ThisBuild / githubWorkflowBuildPreamble ++= Seq(
   WorkflowStep.Run(
     List("sudo apt-get update", "sudo apt-get install libcurl4-openssl-dev"),
@@ -29,10 +43,13 @@ ThisBuild / githubWorkflowBuildPreamble ++= Seq(
     name = Some("Install libcurl (windows)"),
     cond = Some("startsWith(matrix.os, 'windows')"),
   ),
+  setupTestServer,
 )
 ThisBuild / githubWorkflowBuildPostamble ~= {
   _.filterNot(_.name.contains("Check unused compile dependencies"))
 }
+
+ThisBuild / githubWorkflowBuildPostamble += destroyTestServer
 
 val catsEffectVersion = "3.4.5"
 val http4sVersion = "0.23.18"
