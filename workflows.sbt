@@ -45,7 +45,11 @@ ThisBuild / githubWorkflowJobSetup ++= Seq(
     name = Some("Create appropriate sbt launcher"),
   ),
   WorkflowStep.Run(
-    List("nix develop .#${{ matrix.java }} -c echo 'Ready!'"),
+    List(
+      "env",
+      "nix develop .#${{ matrix.java }} -c env",
+      "nix develop .#${{ matrix.java }} -c curl -V",
+    ),
     name = Some("Build nix"),
     cond = Some(s"!startsWith(matrix.os, 'windows')"),
   ),

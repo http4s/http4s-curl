@@ -100,7 +100,10 @@ jobs:
       - name: Build nix
         if: '!startsWith(matrix.os, ''windows'')'
         shell: bash
-        run: 'nix develop .#${{ matrix.java }} -c echo ''Ready!'''
+        run: |
+          env
+          nix develop .#${{ matrix.java }} -c env
+          nix develop .#${{ matrix.java }} -c curl -V
 
       - name: Check that workflows are up to date
         shell: bash
@@ -216,7 +219,10 @@ jobs:
 
       - name: Build nix
         if: '!startsWith(matrix.os, ''windows'')'
-        run: 'nix develop .#${{ matrix.java }} -c echo ''Ready!'''
+        run: |
+          env
+          nix develop .#${{ matrix.java }} -c env
+          nix develop .#${{ matrix.java }} -c curl -V
 
       - name: Download target directories (3.2.1, rootNative)
         uses: actions/download-artifact@v3

@@ -21,7 +21,7 @@ ThisBuild / nativeConfig ~= { c =>
       .withLinkingOptions(c.linkingOptions :+ s"-L${vcpkgBaseDir}/installed/x64-windows/lib/")
   } else c
 
-  platformOptions.withLinkingOptions(platformOptions.linkingOptions :+ "-lcurl")
+  platformOptions.withLinkingOptions(platformOptions.linkingOptions :+ "-lcurl" :+ "-v")
 }
 
 ThisBuild / envVars ++= {
@@ -40,7 +40,7 @@ lazy val modules = List(
   testServer,
   testCommon,
   httpTestSuite,
-) ++ when(!scala.util.Properties.isWin)(websocketTestSuite)
+) ++ when(scala.util.Properties.isLinux)(websocketTestSuite)
 
 lazy val root =
   tlCrossRootProject
@@ -109,6 +109,7 @@ lazy val startTestServer = taskKey[Unit]("starts test server if not running")
 lazy val stopTestServer = taskKey[Unit]("stops test server if running")
 
 ThisBuild / startTestServer := {
+  (testServer / Compile / compile).value
   val cp = (testServer / Compile / fullClasspath).value.files
   TestServer.setClassPath(cp)
   TestServer.setLog(streams.value.log)
