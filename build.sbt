@@ -1,3 +1,5 @@
+import Versions._
+
 ThisBuild / tlBaseVersion := "0.1"
 
 ThisBuild / developers := List(
@@ -5,7 +7,6 @@ ThisBuild / developers := List(
 )
 ThisBuild / startYear := Some(2022)
 
-val scala3 = "3.2.1"
 ThisBuild / crossScalaVersions := Seq(scala3, "2.13.10")
 ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
 // ThisBuild / tlJdkRelease := Some(8)
@@ -51,12 +52,9 @@ ThisBuild / githubWorkflowBuildPostamble ~= {
 
 ThisBuild / githubWorkflowBuildPostamble += destroyTestServer
 
-val catsEffectVersion = "3.4.5"
-val http4sVersion = "0.23.18"
-val munitCEVersion = "2.0.0-M3"
+ThisBuild / crossScalaVersions := Seq(scala3, scala213)
 
 val vcpkgBaseDir = "C:/vcpkg/"
-
 ThisBuild / nativeConfig ~= { c =>
   val osNameOpt = sys.props.get("os.name")
   val isMacOs = osNameOpt.exists(_.toLowerCase().contains("mac"))
@@ -79,8 +77,20 @@ ThisBuild / envVars ++= {
   else Map.empty[String, String]
 }
 
+def when(pred: => Boolean)(refs: CompositeProject*) = if (pred) refs else Nil
+
+lazy val modules = List(
+  curl,
+  example,
+  testServer,
+  testCommon,
+  httpTestSuite,
+) ++ when(!scala.util.Properties.isWin)(websocketTestSuite)
+
 lazy val root =
-  project.in(file(".")).enablePlugins(NoPublishPlugin).aggregate(curl, example, testServer)
+  tlCrossRootProject
+    .enablePlugins(NoPublishPlugin)
+    .aggregate(modules: _*)
 
 lazy val curl = project
   .in(file("curl"))
@@ -90,7 +100,6 @@ lazy val curl = project
     libraryDependencies ++= Seq(
       "org.typelevel" %%% "cats-effect" % catsEffectVersion,
       "org.http4s" %%% "http4s-client" % http4sVersion,
-      "org.typelevel" %%% "munit-cats-effect" % munitCEVersion % Test,
     ),
   )
 
@@ -116,3 +125,28 @@ lazy val testServer = project
     ),
     fork := true,
   )
+
+//NOTE
+//It's important to keep tests separated from source code,
+//so that we can prevent linking a category of tests
+//in platforms that don't support those features
+//
+lazy val testCommon = project
+  .in(file("tests/common"))
+  .enablePlugins(ScalaNativePlugin, NoPublishPlugin)
+  .dependsOn(curl)
+  .settings(
+    libraryDependencies ++= Seq(
+      "org.typelevel" %%% "munit-cats-effect" % munitCEVersion
+    )
+  )
+
+lazy val httpTestSuite = project
+  .in(file("tests/http"))
+  .enablePlugins(ScalaNativePlugin, NoPublishPlugin)
+  .dependsOn(testCommon)
+
+lazy val websocketTestSuite = project
+  .in(file("tests/websocket"))
+  .enablePlugins(ScalaNativePlugin, NoPublishPlugin)
+  .dependsOn(testCommon)
