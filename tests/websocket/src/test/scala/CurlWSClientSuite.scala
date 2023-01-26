@@ -60,7 +60,7 @@ class CurlWSClientSuite extends CatsEffectSuite {
       .assertEquals(List(WSFrame.Text("everything")))
   }
 
-  clientFixture.test("websocket closed".only) {
+  clientFixture.test("websocket closed") {
     _.connectHighLevel(WSRequest(uri"ws://localhost:8080/ws/closed"))
       .use(con => con.receiveStream.compile.toList)
       .assertEquals(Nil)

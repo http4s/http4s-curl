@@ -7,51 +7,6 @@ ThisBuild / developers := List(
 )
 ThisBuild / startYear := Some(2022)
 
-ThisBuild / crossScalaVersions := Seq(scala3, "2.13.10")
-ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
-// ThisBuild / tlJdkRelease := Some(8)
-ThisBuild / githubWorkflowOSes :=
-  Seq("ubuntu-20.04", "ubuntu-22.04", "macos-11", "macos-12", "windows-2022")
-ThisBuild / githubWorkflowBuildMatrixExclusions +=
-  MatrixExclude(Map("scala" -> scala3, "os" -> "windows-2022")) // dottydoc bug
-
-lazy val setupTestServer =
-  WorkflowStep.Run(
-    List(
-      "sbt testServer/run &> /dev/null &",
-      s"echo $$! > server.pid",
-    ),
-    name = Some("Spawn test server"),
-  )
-lazy val destroyTestServer =
-  WorkflowStep.Run(
-    List("cat server.pid | xargs kill", "rm server.pid"),
-    name = Some("kill test server"),
-  )
-
-ThisBuild / githubWorkflowBuildPreamble ++= Seq(
-  WorkflowStep.Run(
-    List("sudo apt-get update", "sudo apt-get install libcurl4-openssl-dev"),
-    name = Some("Install libcurl (ubuntu)"),
-    cond = Some("startsWith(matrix.os, 'ubuntu')"),
-  ),
-  WorkflowStep.Run(
-    List(
-      "vcpkg integrate install",
-      "vcpkg install --triplet x64-windows curl",
-      """cp "C:\vcpkg\installed\x64-windows\lib\libcurl.lib" "C:\vcpkg\installed\x64-windows\lib\curl.lib"""",
-    ),
-    name = Some("Install libcurl (windows)"),
-    cond = Some("startsWith(matrix.os, 'windows')"),
-  ),
-  setupTestServer,
-)
-ThisBuild / githubWorkflowBuildPostamble ~= {
-  _.filterNot(_.name.contains("Check unused compile dependencies"))
-}
-
-ThisBuild / githubWorkflowBuildPostamble += destroyTestServer
-
 ThisBuild / crossScalaVersions := Seq(scala3, scala213)
 
 val vcpkgBaseDir = "C:/vcpkg/"

@@ -25,10 +25,10 @@ import cats.syntax.all._
 import munit.CatsEffectSuite
 import org.http4s.Method._
 import org.http4s.Request
+import org.http4s.Status
 import org.http4s.client.Client
 import org.http4s.curl.unsafe.CurlRuntime
 import org.http4s.syntax.all._
-import org.http4s.Status
 
 class CurlClientSuite extends CatsEffectSuite {
 
