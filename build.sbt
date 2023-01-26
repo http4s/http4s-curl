@@ -77,8 +77,7 @@ lazy val testServer = project
       "org.http4s" %% "http4s-dsl" % http4sVersion,
       "org.http4s" %% "http4s-ember-server" % http4sVersion,
       "ch.qos.logback" % "logback-classic" % "1.2.6",
-    ),
-    fork := true,
+    )
   )
 
 //NOTE
@@ -105,3 +104,19 @@ lazy val websocketTestSuite = project
   .in(file("tests/websocket"))
   .enablePlugins(ScalaNativePlugin, NoPublishPlugin)
   .dependsOn(testCommon)
+
+lazy val startTestServer = taskKey[Unit]("starts test server if not running")
+lazy val stopTestServer = taskKey[Unit]("stops test server if running")
+
+ThisBuild / startTestServer := {
+  val cp = (testServer / Compile / fullClasspath).value.files
+  TestServer.setClassPath(cp)
+  TestServer.setLog(streams.value.log)
+  TestServer.start()
+}
+
+ThisBuild / stopTestServer := {
+  TestServer.stop()
+}
+
+addCommandAlias("integrate", "startTestServer; test")

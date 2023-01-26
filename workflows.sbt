@@ -52,16 +52,10 @@ ThisBuild / githubWorkflowJobSetup ++= Seq(
 )
 
 ThisBuild / githubWorkflowSbtCommand := "bash sbt-launcher"
-
-// Add test server setup and destroy
-ThisBuild / githubWorkflowBuildPreamble += WorkflowStep.Run(
-  List(
-    "bash sbt-launcher testServer/run &> /dev/null &",
-    s"echo $$! > server.pid",
-  ),
-  name = Some("Spawn test server"),
-)
-ThisBuild / githubWorkflowBuildPostamble += WorkflowStep.Run(
-  List("cat server.pid | xargs kill", "rm server.pid"),
-  name = Some("kill test server"),
-)
+ThisBuild / githubWorkflowBuild ~= { steps =>
+  steps.map {
+    case step: WorkflowStep.Sbt if step.name == Some("Test") =>
+      step.copy(commands = List("integrate"))
+    case other => other
+  }
+}

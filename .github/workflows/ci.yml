@@ -102,12 +102,6 @@ jobs:
         shell: bash
         run: 'nix develop .#${{ matrix.java }} -c echo ''Ready!'''
 
-      - name: Spawn test server
-        shell: bash
-        run: |
-          bash sbt-launcher testServer/run &> /dev/null &
-          echo $! > server.pid
-
       - name: Check that workflows are up to date
         shell: bash
         run: bash sbt-launcher githubWorkflowCheck
@@ -124,7 +118,7 @@ jobs:
 
       - name: Test
         shell: bash
-        run: bash sbt-launcher 'project ${{ matrix.project }}' '++ ${{ matrix.scala }}' test
+        run: bash sbt-launcher 'project ${{ matrix.project }}' '++ ${{ matrix.scala }}' integrate
 
       - name: Check binary compatibility
         if: matrix.java == 'temurin@17' && matrix.os == 'ubuntu-20.04'
@@ -140,12 +134,6 @@ jobs:
         if: matrix.java == 'temurin@17' && !startsWith(matrix.scala, '3.')
         shell: bash
         run: bash sbt-launcher 'project ${{ matrix.project }}' '++ ${{ matrix.scala }}' 'scalafixAll --check'
-
-      - name: kill test server
-        shell: bash
-        run: |
-          cat server.pid | xargs kill
-          rm server.pid
 
       - name: Make target directories
         if: github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
