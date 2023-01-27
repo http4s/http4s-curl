@@ -20,7 +20,8 @@ object TestServer {
     val options = ForkOptions()
 
     // build classpath string
-    val cpStr = cp.map(_.getAbsolutePath).mkString(":")
+    val cpSep = if (scala.util.Properties.isWin) ";" else ":"
+    val cpStr = cp.map(_.getAbsolutePath).mkString(cpSep)
     val arguments: Seq[String] = List("-classpath", cpStr)
     val mainClass: String = "org.http4s.test.Main"
 

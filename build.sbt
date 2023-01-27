@@ -40,7 +40,7 @@ lazy val modules = List(
   testServer,
   testCommon,
   httpTestSuite,
-) ++ when(scala.util.Properties.isLinux)(websocketTestSuite)
+) ++ when(sys.env.get("EXPERIMENTAL").contains("yes"))(websocketTestSuite)
 
 lazy val root =
   tlCrossRootProject
