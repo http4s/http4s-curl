@@ -1,6 +1,5 @@
 import org.typelevel.sbt.gha.WorkflowStep.Use
 ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
-// ThisBuild / tlJdkRelease := Some(8)
 ThisBuild / githubWorkflowOSes :=
   Seq("ubuntu-latest", "ubuntu-20.04", "ubuntu-22.04", "macos-11", "macos-12", "windows-2022")
 ThisBuild / githubWorkflowBuildMatrixExclusions ++= Seq(
@@ -16,18 +15,6 @@ ThisBuild / githubWorkflowBuildPostamble ~= {
   _.filterNot(_.name.contains("Check unused compile dependencies"))
 }
 
-// lazy val ifWindows = "startsWith(matrix.os, 'windows')"
-
-// ThisBuild / githubWorkflowJobSetup ~= {
-//   _.map { // Setup on windows only, because we use nix on linux and mac
-//     case step: Use if step.name.exists(_.matches("(Download|Setup) Java .+")) =>
-//       val newCond = (ifWindows :: step.cond.toList).map(c => s"($c)").mkString(" && ")
-//       step.copy(cond = Some(newCond))
-//     case other => other
-//   }
-// }
-//
-
 ThisBuild / githubWorkflowGeneratedCI ~= {
   _.map { job =>
     if (job.id == "build")
@@ -36,12 +23,8 @@ ThisBuild / githubWorkflowGeneratedCI ~= {
   }
 }
 
+val libcurlVersion = "7.87.0"
 ThisBuild / githubWorkflowJobSetup ++= Seq(
-  // WorkflowStep.Use(
-  //   UseRef.Public("cachix", "install-nix-action", "v17"),
-  //   name = Some("Install Nix"),
-  //   cond = Some(s"!startsWith(matrix.os, 'windows')"),
-  // ),
   WorkflowStep.Run(
     List("sudo apt-get update", "sudo apt-get install libcurl4-openssl-dev"),
     name = Some("Install libcurl (ubuntu)"),
@@ -53,14 +36,15 @@ ThisBuild / githubWorkflowJobSetup ++= Seq(
       "sudo apt-get purge curl",
       "sudo apt-get install libssl-dev autoconf libtool make wget unzip",
       "cd /usr/local/src",
-      "sudo wget https://curl.se/download/curl-7.87.0.zip",
-      "sudo unzip curl-7.87.0.zip",
-      "cd curl-7.87.0",
+      s"sudo wget https://curl.se/download/curl-$libcurlVersion.zip",
+      s"sudo unzip curl-$libcurlVersion.zip",
+      s"cd curl-$libcurlVersion",
       "sudo ./configure --with-openssl --enable-websockets",
       "sudo make",
       "sudo make install",
       "curl-config --version",
       "curl-config --protocols",
+      """echo "LD_LIBRARY_PATH=/usr/local/lib/" >> $GITHUB_ENV""",
     ),
     name = Some("Build libcurl from source (ubuntu)"),
     cond = Some("startsWith(matrix.os, 'ubuntu') && matrix.experimental == 'yes'"),
@@ -74,19 +58,6 @@ ThisBuild / githubWorkflowJobSetup ++= Seq(
     name = Some("Install libcurl (windows)"),
     cond = Some("startsWith(matrix.os, 'windows')"),
   ),
-  // WorkflowStep.Run(
-  //   List(
-  //     """([[ "${{ matrix.os }}" =~ "windows" ]] && { echo 'sbt "$@"'; } || { echo 'nix develop .#${{ matrix.java }} -c sbt "$@"'; }) >> sbt-launcher"""
-  //   ),
-  //   name = Some("Create appropriate sbt launcher"),
-  // ),
-  // WorkflowStep.Run(
-  //   List(
-  //     "nix develop .#${{ matrix.java }} -c curl -V",
-  //   ),
-  //   name = Some("Build nix"),
-  //   cond = Some(s"!startsWith(matrix.os, 'windows')"),
-  // ),
 )
 
 ThisBuild / githubWorkflowBuild ~= { steps =>
