@@ -28,10 +28,14 @@
               jdk.package = jdk;
               native = {
                 enable = true;
-                libraries = [ curl pkgs.nghttp2 ];
+                libraries = [ curl ];
               };
             };
             packages = [ curl ];
+            env = [{
+              name = "LD_LIBRARY_PATH";
+              eval = "$LIBRARY_PATH";
+            }];
           };
       in {
         devShell = mkShell pkgs.jdk8;
