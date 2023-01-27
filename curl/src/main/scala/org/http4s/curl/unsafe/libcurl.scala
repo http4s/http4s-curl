@@ -64,12 +64,12 @@ private[curl] object libcurl_const {
 
   // constant flags from websocket.h
   final val CURLWS_TEXT = 1 << 0
-  final val CURLWS_BINARY: CInt = 1 << 1
-  final val CURLWS_CONT: CInt = 1 << 2
-  final val CURLWS_CLOSE: CInt = 1 << 3
-  final val CURLWS_PING: CInt = 1 << 4
-  final val CURLWS_OFFSET: CInt = 1 << 5
-  final val CURLWS_PONG: CInt = 1 << 6
+  final val CURLWS_BINARY = 1 << 1
+  final val CURLWS_CONT = 1 << 2
+  final val CURLWS_CLOSE = 1 << 3
+  final val CURLWS_PING = 1 << 4
+  final val CURLWS_OFFSET = 1 << 5
+  final val CURLWS_PONG = 1 << 6
 
   // websocket options flags
   final val CURLWS_RAW_MODE = 1 << 0
