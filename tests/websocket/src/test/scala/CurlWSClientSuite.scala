@@ -73,4 +73,18 @@ class CurlWSClientSuite extends CatsEffectSuite {
       .use_
       .intercept[CurlError]
   }
+
+  clientFixture.test("error") { client =>
+    client
+      .connectHighLevel(WSRequest(uri"server"))
+      .use_
+      .intercept[CurlError]
+  }
+
+  clientFixture.test("invalid protocol") { client =>
+    client
+      .connectHighLevel(WSRequest(uri"http://localhost:8080/http"))
+      .use_
+      .intercept[IllegalArgumentException]
+  }
 }
