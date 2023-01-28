@@ -39,6 +39,7 @@ private[curl] object libcurl_const {
   final val CURLOPT_WRITEDATA = CURLOPTTYPE_OBJECTPOINT + 1
   final val CURLOPT_READFUNCTION = CURLOPTTYPE_FUNCTIONPOINT + 12
   final val CURLOPT_READDATA = CURLOPTTYPE_OBJECTPOINT + 9
+  final val CURLOPT_ERRORBUFFER = CURLOPTTYPE_OBJECTPOINT + 10
   final val CURLOPT_VERBOSE = CURLOPTTYPE_LONG + 41
   final val CURLOPT_UPLOAD = CURLOPTTYPE_LONG + 46
   final val CURLOPT_WS_OPTIONS = CURLOPTTYPE_LONG + 320
@@ -238,6 +239,17 @@ private[curl] object libcurl {
       value: CLong,
   ): CURLcode =
     extern
+
+  @name("curl_easy_setopt")
+  def curl_easy_setopt_errorbuffer(
+      curl: Ptr[CURL],
+      option: CURLOPT_ERRORBUFFER.type,
+      buffer: Ptr[CChar],
+  ): CURLcode =
+    extern
+
+  @name("curl_easy_strerror")
+  def curl_easy_strerror(code: CURLcode): Ptr[CChar] = extern
 
   @name("curl_easy_setopt")
   def curl_easy_setopt_websocket(

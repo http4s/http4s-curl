@@ -33,6 +33,7 @@ import org.http4s.HttpVersion
 import org.http4s.Response
 import org.http4s.Status
 import org.http4s.client.Client
+import org.http4s.curl.internal.CurlEasy
 import org.http4s.curl.unsafe.CurlExecutorScheduler
 import org.http4s.curl.unsafe.libcurl
 import org.http4s.curl.unsafe.libcurl_const
@@ -64,17 +65,7 @@ private[curl] object CurlClient {
 
         dispatcher <- Dispatcher.parallel[IO]
 
-        handle <- Resource.make {
-          IO {
-            val handle = libcurl.curl_easy_init()
-            if (handle == null)
-              throw new RuntimeException("curl_easy_init")
-            handle
-          }
-        } { handle =>
-          IO(libcurl.curl_easy_cleanup(handle))
-        }
-
+        handle <- CurlEasy()
         done <- IO.deferred[Either[Throwable, Unit]].toResource
 
         recvPause <- Ref[SyncIO].of(false).to[IO].toResource
@@ -85,28 +76,20 @@ private[curl] object CurlClient {
           .to[IO]
           .ifM( // needs unpause
             sendPause.get.to[IO].flatMap { p =>
-              IO {
-                val code = libcurl.curl_easy_pause(
-                  handle,
-                  if (p) libcurl_const.CURLPAUSE_SEND else libcurl_const.CURLPAUSE_SEND_CONT,
-                )
-                if (code != 0)
-                  throw new RuntimeException(s"curl_easy_pause: $code")
-              }
+              IO(
+                handle
+                  .pause(if (p) libcurl_const.CURLPAUSE_SEND else libcurl_const.CURLPAUSE_SEND_CONT)
+              )
             },
             IO.unit, // already unpaused
           )
 
         unpauseSend = sendPause.set(false).to[IO] *>
           recvPause.get.to[IO].flatMap { p =>
-            IO {
-              val code = libcurl.curl_easy_pause(
-                handle,
-                if (p) libcurl_const.CURLPAUSE_RECV else libcurl_const.CURLPAUSE_RECV_CONT,
-              )
-              if (code != 0)
-                throw new RuntimeException(s"curl_easy_pause: $code")
-            }
+            IO(
+              handle
+                .pause(if (p) libcurl_const.CURLPAUSE_RECV else libcurl_const.CURLPAUSE_RECV_CONT)
+            )
           }
 
         requestBodyChunk <- Ref[SyncIO].of(Option(ByteVector.empty)).to[IO].toResource
@@ -145,35 +128,15 @@ private[curl] object CurlClient {
 
         _ <- Resource.eval {
           IO {
-            @inline def throwOnError(thunk: => libcurl.CURLcode): Unit = {
-              val code = thunk
-              if (code != 0)
-                throw new RuntimeException(s"curl_easy_setop: $code")
-            }
 
-            throwOnError(
-              libcurl.curl_easy_setopt_customrequest(
-                handle,
-                libcurl_const.CURLOPT_CUSTOMREQUEST,
-                toCString(req.method.renderString),
-              )
-            )
+            // TODO add in options
+            // handle.setVerbose(true)
 
-            throwOnError(
-              libcurl.curl_easy_setopt_upload(
-                handle,
-                libcurl_const.CURLOPT_UPLOAD,
-                1,
-              )
-            )
+            handle.setCustomRequest(toCString(req.method.renderString))
 
-            throwOnError(
-              libcurl.curl_easy_setopt_url(
-                handle,
-                libcurl_const.CURLOPT_URL,
-                toCString(req.uri.renderString),
-              )
-            )
+            handle.setUpload(true)
+
+            handle.setUrl(toCString(req.uri.renderString))
 
             val httpVersion = req.httpVersion match {
               case HttpVersion.`HTTP/1.0` => libcurl_const.CURL_HTTP_VERSION_1_0
@@ -182,13 +145,7 @@ private[curl] object CurlClient {
               case HttpVersion.`HTTP/3` => libcurl_const.CURL_HTTP_VERSION_3
               case _ => libcurl_const.CURL_HTTP_VERSION_NONE
             }
-            throwOnError(
-              libcurl.curl_easy_setopt_http_version(
-                handle,
-                libcurl_const.CURLOPT_HTTP_VERSION,
-                httpVersion,
-              )
-            )
+            handle.setHttpVersion(httpVersion)
 
             var headers: Ptr[libcurl.curl_slist] = null
             req.headers // curl adds these headers automatically, so we explicitly disable them
@@ -196,11 +153,9 @@ private[curl] object CurlClient {
               .foreach { header =>
                 headers = libcurl.curl_slist_append(headers, toCString(header.toString))
               }
-            throwOnError(
-              libcurl.curl_easy_setopt_httpheader(handle, libcurl_const.CURLOPT_HTTPHEADER, headers)
-            )
+            handle.setHttpHeader(headers)
 
-            throwOnError {
+            {
               val data = ReadCallbackData(
                 requestBodyChunk,
                 requestBodyQueue,
@@ -210,22 +165,12 @@ private[curl] object CurlClient {
 
               gcRoot.add(data)
 
-              libcurl.curl_easy_setopt_readdata(
-                handle,
-                libcurl_const.CURLOPT_READDATA,
-                toPtr(data),
-              )
+              handle.setReadData(toPtr(data))
             }
 
-            throwOnError {
-              libcurl.curl_easy_setopt_readfunction(
-                handle,
-                libcurl_const.CURLOPT_READFUNCTION,
-                readCallback(_, _, _, _),
-              )
-            }
+            handle.setReadFunction(readCallback(_, _, _, _))
 
-            throwOnError {
+            {
               val data = HeaderCallbackData(
                 response,
                 responseBuilder,
@@ -237,22 +182,12 @@ private[curl] object CurlClient {
 
               gcRoot.add(data)
 
-              libcurl.curl_easy_setopt_headerdata(
-                handle,
-                libcurl_const.CURLOPT_HEADERDATA,
-                toPtr(data),
-              )
+              handle.setHeaderData(toPtr(data))
             }
 
-            throwOnError {
-              libcurl.curl_easy_setopt_headerfunction(
-                handle,
-                libcurl_const.CURLOPT_HEADERFUNCTION,
-                headerCallback(_, _, _, _),
-              )
-            }
+            handle.setHeaderFunction(headerCallback(_, _, _, _))
 
-            throwOnError {
+            {
               val data = WriteCallbackData(
                 recvPause,
                 responseBodyQueueReady,
@@ -262,20 +197,10 @@ private[curl] object CurlClient {
 
               gcRoot.add(data)
 
-              libcurl.curl_easy_setopt_writedata(
-                handle,
-                libcurl_const.CURLOPT_WRITEDATA,
-                toPtr(data),
-              )
+              handle.setWriteData(toPtr(data))
             }
 
-            throwOnError {
-              libcurl.curl_easy_setopt_writefunction(
-                handle,
-                libcurl_const.CURLOPT_WRITEFUNCTION,
-                writeCallback(_, _, _, _),
-              )
-            }
+            handle.setWriteFunction(writeCallback(_, _, _, _))
 
           }
         }
@@ -283,7 +208,7 @@ private[curl] object CurlClient {
         _ <- Resource.eval {
           IO {
             ec.addHandle(
-              handle,
+              handle.curl,
               x => dispatcher.unsafeRunAndForget(done.complete(x) *> responseBodyQueue.offer(None)),
             )
           }

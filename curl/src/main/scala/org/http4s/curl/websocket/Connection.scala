@@ -26,8 +26,8 @@ import cats.effect.std.Dispatcher
 import cats.effect.std.Queue
 import cats.implicits._
 import org.http4s.client.websocket._
+import org.http4s.curl.internal.CurlEasy
 import org.http4s.curl.internal.Utils
-import org.http4s.curl.internal.Utils.throwOnError
 import org.http4s.curl.unsafe.libcurl
 import org.http4s.curl.unsafe.libcurl_const
 import scodec.bits.ByteVector
@@ -38,7 +38,7 @@ import scala.scalanative.unsigned._
 import Connection._
 
 final private class Connection private (
-    val handler: Ptr[libcurl.CURL],
+    val handler: CurlEasy,
     receivedQ: Queue[IO, Option[WSFrame]],
     receiving: Ref[SyncIO, Option[Receiving]],
     established: Deferred[IO, Unit],
@@ -65,7 +65,7 @@ final private class Connection private (
       nmemb: CSize,
   ): CSize = {
     val realsize = size * nmemb
-    val meta = libcurl.curl_easy_ws_meta(handler)
+    val meta = handler.wsMeta()
 
     val toEnq = receiving
       .modify {
@@ -115,10 +115,7 @@ final private class Connection private (
           val buffer = data.toPtr
           val size = data.size.toULong
 
-          throwOnError(
-            libcurl
-              .curl_easy_ws_send(handler, buffer, size, sent, 0.toULong, flags.toUInt)
-          )
+          handler.wsSend(buffer, size, sent, 0.toULong, flags.toUInt)
         }
       }
 }
@@ -158,7 +155,7 @@ private object Connection {
     recvQ <- Queue.bounded[IO, Option[WSFrame]](recvBufferSize).toResource
     recv <- Ref[SyncIO].of(Option.empty[Receiving]).to[IO].toResource
     estab <- IO.deferred[Unit].toResource
-    handler <- Utils.createHandler
+    handler <- CurlEasy()
     brk <- Breaker(
       handler,
       capacity = recvBufferSize,

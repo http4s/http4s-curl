@@ -23,7 +23,6 @@ import org.http4s.Uri
 import org.http4s.client.websocket.WSFrame._
 import org.http4s.client.websocket._
 import org.http4s.curl.internal.Utils
-import org.http4s.curl.internal.Utils.throwOnError
 import org.http4s.curl.unsafe.CurlExecutorScheduler
 import org.http4s.curl.unsafe.CurlRuntime
 import org.http4s.curl.unsafe.libcurl
@@ -63,86 +62,29 @@ private[curl] object CurlWSClient {
 
         val uri = req.uri.copy(scheme = Some(scheme))
 
-        throwOnError(
-          libcurl.curl_easy_setopt_customrequest(
-            con.handler,
-            libcurl_const.CURLOPT_CUSTOMREQUEST,
-            toCString(req.method.renderString),
-          )
-        )
+        con.handler.setCustomRequest(toCString(req.method.renderString))
 
         if (verbose)
-          throwOnError(
-            libcurl.curl_easy_setopt_verbose(
-              con.handler,
-              libcurl_const.CURLOPT_VERBOSE,
-              1L,
-            )
-          )
+          con.handler.setVerbose(true)
 
-        // NOTE raw mode in curl needs decoding metadata in client side
-        // which is not implemented! so this client never receives a ping
-        // as all pings are always handled by libcurl itself
-        // throwOnError(
-        //   libcurl.curl_easy_setopt_websocket(
-        //     con.handler,
-        //     libcurl_const.CURLOPT_WS_OPTIONS,
-        //     libcurl_const.CURLWS_RAW_MODE,
-        //   )
-        // )
-
-        throwOnError(
-          libcurl.curl_easy_setopt_url(
-            con.handler,
-            libcurl_const.CURLOPT_URL,
-            toCString(uri.renderString),
-          )
-        )
+        con.handler.setUrl(toCString(uri.renderString))
 
         // NOTE there is no need to handle object lifetime here,
         // as Connection class and curl handler have the same lifetime
-        throwOnError {
-          libcurl.curl_easy_setopt_writedata(
-            con.handler,
-            libcurl_const.CURLOPT_WRITEDATA,
-            Utils.toPtr(con),
-          )
-        }
+        con.handler.setWriteData(Utils.toPtr(con))
+        con.handler.setWriteFunction(recvCallback(_, _, _, _))
 
-        throwOnError {
-          libcurl.curl_easy_setopt_writefunction(
-            con.handler,
-            libcurl_const.CURLOPT_WRITEFUNCTION,
-            recvCallback(_, _, _, _),
-          )
-        }
-
-        libcurl.curl_easy_setopt_headerdata(
-          con.handler,
-          libcurl_const.CURLOPT_HEADERDATA,
-          Utils.toPtr(con),
-        )
-
-        throwOnError {
-          libcurl.curl_easy_setopt_headerfunction(
-            con.handler,
-            libcurl_const.CURLOPT_HEADERFUNCTION,
-            headerCallback(_, _, _, _),
-          )
-        }
+        con.handler.setHeaderData(Utils.toPtr(con))
+        con.handler.setHeaderFunction(headerCallback(_, _, _, _))
 
         var headers: Ptr[libcurl.curl_slist] = null
         req.headers
           .foreach { header =>
             headers = libcurl.curl_slist_append(headers, toCString(header.toString))
           }
-        throwOnError(
-          libcurl.curl_easy_setopt_httpheader(
-            con.handler,
-            libcurl_const.CURLOPT_HTTPHEADER,
-            headers,
-          )
-        )
+
+        con.handler.setHttpHeader(headers)
+
       }
     }
 
@@ -181,7 +123,7 @@ private[curl] object CurlWSClient {
       WSClient(true) { req =>
         Connection(recvBufferSize, pauseOn, resumeOn, verbose)
           .evalTap(setup(req, verbose))
-          .flatTap(con => ec.addHandleR(con.handler, con.onTerminated))
+          .flatTap(con => ec.addHandleR(con.handler.curl, con.onTerminated))
           .map(con =>
             new WSConnection[IO] {
 
