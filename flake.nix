@@ -1,7 +1,7 @@
 {
   inputs = {
     typelevel-nix.url = "github:typelevel/typelevel-nix";
-    nixpkgs.follows = "typelevel-nix/nixpkgs";
+    nixpkgs.url = "nixpkgs/nixos-unstable"; # NOTE we need latest curl
     flake-utils.follows = "typelevel-nix/flake-utils";
   };
 
@@ -12,17 +12,33 @@
           inherit system;
           overlays = [ typelevel-nix.overlay ];
         };
-      in {
-        devShell = pkgs.devshell.mkShell {
-          imports = [ typelevel-nix.typelevelShell ];
-          name = "http4s-curl";
-          typelevelShell = {
-            jdk.package = pkgs.jdk8;
-            native = {
-              enable = true;
-              libraries = [ pkgs.curl ];
+        curl = pkgs.curl.overrideAttrs (old: {
+          # Websocket support in curl is currently in experimental mode
+          # which needs to be enabled explicitly in build time in order to be available
+          #
+          #https://github.com/curl/curl/blob/f8da4f2f2d0451dc0a126ae3e5077b4527ccdc86/configure.ac#L174
+          configureFlags = old.configureFlags ++ [ "--enable-websockets" ];
+        });
+
+        mkShell = jdk:
+          pkgs.devshell.mkShell {
+            imports = [ typelevel-nix.typelevelShell ];
+            name = "http4s-curl";
+            typelevelShell = {
+              jdk.package = jdk;
+              native = {
+                enable = true;
+                libraries = [ curl pkgs.nghttp2 ];
+              };
             };
+            packages = [ curl ];
           };
+      in {
+        devShell = mkShell pkgs.jdk8;
+
+        devShells = {
+          "temurin@8" = mkShell pkgs.temurin-bin-8;
+          "temurin@17" = mkShell pkgs.temurin-bin-17;
         };
       });
 }

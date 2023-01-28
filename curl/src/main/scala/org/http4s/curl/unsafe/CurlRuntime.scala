@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
-package org.http4s.curl.unsafe
+package org.http4s.curl
+package unsafe
 
 import cats.effect.unsafe.IORuntime
 import cats.effect.unsafe.IORuntimeConfig
 import cats.effect.unsafe.Scheduler
 
+import scala.collection.mutable.ListBuffer
 import scala.concurrent.ExecutionContext
 import scala.scalanative.unsafe._
 
@@ -58,5 +60,30 @@ object CurlRuntime {
   }
 
   def curlVersion: String = fromCString(libcurl.curl_version())
+
+  /** curl version number encoded as hex 0xXXYYZZ
+    * see here https://everything.curl.dev/libcurl/api
+    */
+  def curlVersionNumber: Int = libcurl.curl_version_number()
+
+  /** curl version number (major, minor, patch) */
+  def curlVersionTriple: (Int, Int, Int) = (
+    (curlVersionNumber & 0xff0000) >> 16,
+    (curlVersionNumber & 0x00ff00) >> 8,
+    (curlVersionNumber & 0x0000ff),
+  )
+
+  def protocols: List[String] = {
+
+    val all: ListBuffer[String] = ListBuffer.empty
+    var cur: Ptr[CString] = libcurl.curl_protocols_info()
+    while ((!cur).toLong != 0) {
+      all.addOne(fromCString(!cur).toLowerCase)
+      cur = cur + 1
+    }
+    all.toList
+  }
+
+  def isWebsocketAvailable: Boolean = protocols.contains("ws")
 
 }
