@@ -76,20 +76,24 @@ private[curl] object libcurl_const {
   final val CURLWS_RAW_MODE = 1 << 0
 }
 
+final private[curl] case class CURLcode(value: CInt) extends AnyVal {
+  @inline def isOk: Boolean = value == 0
+  @inline def isError: Boolean = value != 0
+}
+final private[curl] case class CURLMcode(value: CInt) extends AnyVal {
+  @inline def isOk: Boolean = value == 0
+  @inline def isError: Boolean = value != 0
+}
+
 @link("curl")
 @extern
 private[curl] object libcurl {
 
   type CURL
-  final case class CURLcode(value: CInt) extends AnyVal {
-    @inline def isOk: Boolean = value == 0
-    @inline def isError: Boolean = value != 0
-  }
+  type CURLcode = org.http4s.curl.unsafe.CURLcode
+
   type CURLM
-  final case class CURLMcode(value: CInt) extends AnyVal {
-    @inline def isOk: Boolean = value == 0
-    @inline def isError: Boolean = value != 0
-  }
+  type CURLMcode = org.http4s.curl.unsafe.CURLMcode
 
   type CURLMSG = CUnsignedInt
   type CURLMsg

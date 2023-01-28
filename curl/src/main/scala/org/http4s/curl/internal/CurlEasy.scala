@@ -100,7 +100,7 @@ final private[curl] class CurlEasy private (val curl: Ptr[CURL], errBuffer: Ptr[
 }
 
 private[curl] object CurlEasy {
-  private final val CURL_ERROR_SIZE = 256L
+  final private val CURL_ERROR_SIZE = 256L
 
   private val createHandler: Resource[IO, Ptr[CURL]] = Resource.make {
     IO {
