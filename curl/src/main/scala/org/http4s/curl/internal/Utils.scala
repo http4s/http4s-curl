@@ -17,29 +17,12 @@
 package org.http4s.curl.internal
 
 import cats.effect._
-import org.http4s.curl.unsafe.libcurl
 
 import scala.scalanative.runtime
 import scala.scalanative.runtime.Intrinsics
 import scala.scalanative.unsafe._
 
 private[curl] object Utils {
-  @inline def throwOnError(thunk: => libcurl.CURLcode): Unit = {
-    val code = thunk
-    if (code != 0)
-      throw new RuntimeException(s"curl_easy_setop: $code")
-  }
-
-  val createHandler: Resource[IO, Ptr[libcurl.CURL]] = Resource.make {
-    IO {
-      val handle = libcurl.curl_easy_init()
-      if (handle == null)
-        throw new RuntimeException("curl_easy_init")
-      handle
-    }
-  } { handle =>
-    IO(libcurl.curl_easy_cleanup(handle))
-  }
   val newZone: Resource[IO, Zone] = Resource.make(IO(Zone.open()))(z => IO(z.close()))
 
   def toPtr(a: AnyRef): Ptr[Byte] =

@@ -17,24 +17,16 @@
 package org.http4s.curl
 
 import munit.FunSuite
-import org.http4s.curl.unsafe.CurlRuntime
+import org.http4s.curl.unsafe.CURLcode
 
-class CurlRuntimeSuite extends FunSuite {
-
-  test("curl version") {
-    val prefix = "libcurl/7."
-    assertEquals(CurlRuntime.curlVersion.take(prefix.length), prefix)
+class ErrorCodeSuite extends FunSuite {
+  test("sanity") {
+    val error = CurlError.fromCode(CURLcode(1))
+    assert(error.info.contains("Unsupported protocol"))
   }
 
-  test("curl version number") {
-    assert(CurlRuntime.curlVersionNumber > 0x070000)
-    assert(CurlRuntime.curlVersionTriple._1 == 7)
+  test("sanity") {
+    val error = CurlError.fromCode(CURLcode(7))
+    assert(error.info.contains("Couldn't connect to server"))
   }
-
-  test("curl protocols") {
-    val protocols = CurlRuntime.protocols
-    assert(protocols.contains("http"))
-    assert(protocols.contains("https"))
-  }
-
 }

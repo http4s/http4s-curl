@@ -19,11 +19,8 @@ package org.http4s.curl.websocket
 import cats.effect.IO
 import cats.effect.kernel.Ref
 import cats.implicits._
-import org.http4s.curl.internal.Utils.throwOnError
-import org.http4s.curl.unsafe.libcurl
+import org.http4s.curl.internal.CurlEasy
 import org.http4s.curl.unsafe.libcurl_const
-
-import scala.scalanative.unsafe._
 
 /** Internal circuit breaker for websocket receive
   * starts at max capacity,
@@ -33,7 +30,7 @@ import scala.scalanative.unsafe._
   * reaching close threshold unpauses receive
   */
 final private class Breaker private (
-    handler: Ptr[libcurl.CURL],
+    handler: CurlEasy,
     capacity: Ref[IO, Int],
     close: Int,
     open: Int,
@@ -42,22 +39,12 @@ final private class Breaker private (
   private val unpauseRecv = IO.blocking {
     if (verbose) println("continue recv")
 
-    throwOnError(
-      libcurl.curl_easy_pause(
-        handler,
-        libcurl_const.CURLPAUSE_RECV_CONT,
-      )
-    )
+    handler.pause(libcurl_const.CURLPAUSE_RECV_CONT)
   }
 
   private val pauseRecv = IO.blocking {
     if (verbose) println("pause recv")
-    throwOnError(
-      libcurl.curl_easy_pause(
-        handler,
-        libcurl_const.CURLPAUSE_RECV,
-      )
-    )
+    handler.pause(libcurl_const.CURLPAUSE_RECV)
   }
 
   def drain: IO[Unit] = capacity
@@ -79,7 +66,7 @@ final private class Breaker private (
 
 private object Breaker {
   def apply(
-      handler: Ptr[libcurl.CURL],
+      handler: CurlEasy,
       capacity: Int,
       close: Int,
       open: Int,

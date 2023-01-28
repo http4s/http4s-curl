@@ -19,19 +19,12 @@ package org.http4s.curl.websocket
 import cats.Foldable
 import cats.effect.IO
 import cats.implicits._
-import org.http4s.Uri
 import org.http4s.client.websocket.WSFrame._
 import org.http4s.client.websocket._
-import org.http4s.curl.internal.Utils
-import org.http4s.curl.internal.Utils.throwOnError
 import org.http4s.curl.unsafe.CurlExecutorScheduler
 import org.http4s.curl.unsafe.CurlRuntime
-import org.http4s.curl.unsafe.libcurl
 import org.http4s.curl.unsafe.libcurl_const
 import scodec.bits.ByteVector
-
-import scala.annotation.unused
-import scala.scalanative.unsafe._
 
 private[curl] object CurlWSClient {
 
@@ -48,127 +41,6 @@ private[curl] object CurlWSClient {
       )
     case _ => IO.raiseError(new RuntimeException("Not running on CurlExecutorScheduler"))
   }
-  final private val ws = Uri.Scheme.unsafeFromString("ws")
-  final private val wss = Uri.Scheme.unsafeFromString("wss")
-
-  private def setup(req: WSRequest, verbose: Boolean)(con: Connection) =
-    Utils.newZone.use { implicit zone =>
-      IO {
-        val scheme = req.uri.scheme.getOrElse(ws)
-
-        if (scheme != ws && scheme != wss)
-          throw new IllegalArgumentException(
-            s"Websocket client can't handle ${scheme.value} scheme!"
-          )
-
-        val uri = req.uri.copy(scheme = Some(scheme))
-
-        throwOnError(
-          libcurl.curl_easy_setopt_customrequest(
-            con.handler,
-            libcurl_const.CURLOPT_CUSTOMREQUEST,
-            toCString(req.method.renderString),
-          )
-        )
-
-        if (verbose)
-          throwOnError(
-            libcurl.curl_easy_setopt_verbose(
-              con.handler,
-              libcurl_const.CURLOPT_VERBOSE,
-              1L,
-            )
-          )
-
-        // NOTE raw mode in curl needs decoding metadata in client side
-        // which is not implemented! so this client never receives a ping
-        // as all pings are always handled by libcurl itself
-        // throwOnError(
-        //   libcurl.curl_easy_setopt_websocket(
-        //     con.handler,
-        //     libcurl_const.CURLOPT_WS_OPTIONS,
-        //     libcurl_const.CURLWS_RAW_MODE,
-        //   )
-        // )
-
-        throwOnError(
-          libcurl.curl_easy_setopt_url(
-            con.handler,
-            libcurl_const.CURLOPT_URL,
-            toCString(uri.renderString),
-          )
-        )
-
-        // NOTE there is no need to handle object lifetime here,
-        // as Connection class and curl handler have the same lifetime
-        throwOnError {
-          libcurl.curl_easy_setopt_writedata(
-            con.handler,
-            libcurl_const.CURLOPT_WRITEDATA,
-            Utils.toPtr(con),
-          )
-        }
-
-        throwOnError {
-          libcurl.curl_easy_setopt_writefunction(
-            con.handler,
-            libcurl_const.CURLOPT_WRITEFUNCTION,
-            recvCallback(_, _, _, _),
-          )
-        }
-
-        libcurl.curl_easy_setopt_headerdata(
-          con.handler,
-          libcurl_const.CURLOPT_HEADERDATA,
-          Utils.toPtr(con),
-        )
-
-        throwOnError {
-          libcurl.curl_easy_setopt_headerfunction(
-            con.handler,
-            libcurl_const.CURLOPT_HEADERFUNCTION,
-            headerCallback(_, _, _, _),
-          )
-        }
-
-        var headers: Ptr[libcurl.curl_slist] = null
-        req.headers
-          .foreach { header =>
-            headers = libcurl.curl_slist_append(headers, toCString(header.toString))
-          }
-        throwOnError(
-          libcurl.curl_easy_setopt_httpheader(
-            con.handler,
-            libcurl_const.CURLOPT_HTTPHEADER,
-            headers,
-          )
-        )
-      }
-    }
-
-  /** libcurl write callback */
-  private def recvCallback(
-      buffer: Ptr[CChar],
-      size: CSize,
-      nmemb: CSize,
-      userdata: Ptr[Byte],
-  ): CSize =
-    Utils
-      .fromPtr[Connection](userdata)
-      .onReceive(buffer, size, nmemb)
-
-  private def headerCallback(
-      @unused buffer: Ptr[CChar],
-      size: CSize,
-      nitems: CSize,
-      userdata: Ptr[Byte],
-  ): CSize = {
-    Utils
-      .fromPtr[Connection](userdata)
-      .onEstablished()
-
-    size * nitems
-  }
 
   def apply(
       ec: CurlExecutorScheduler,
@@ -179,12 +51,9 @@ private[curl] object CurlWSClient {
   ): Option[WSClient[IO]] =
     Option.when(CurlRuntime.isWebsocketAvailable && CurlRuntime.curlVersionNumber >= 0x75700) {
       WSClient(true) { req =>
-        Connection(recvBufferSize, pauseOn, resumeOn, verbose)
-          .evalTap(setup(req, verbose))
-          .flatTap(con => ec.addHandleR(con.handler, con.onTerminated))
+        Connection(req, ec, recvBufferSize, pauseOn, resumeOn, verbose)
           .map(con =>
             new WSConnection[IO] {
-
               override def send(wsf: WSFrame): IO[Unit] = wsf match {
                 case Close(_, _) =>
                   val flags = libcurl_const.CURLWS_CLOSE

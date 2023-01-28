@@ -25,24 +25,27 @@ import cats.effect.kernel.Ref
 import cats.effect.std.Dispatcher
 import cats.effect.std.Queue
 import cats.implicits._
+import org.http4s.Uri
 import org.http4s.client.websocket._
+import org.http4s.curl.internal.CurlEasy
 import org.http4s.curl.internal.Utils
-import org.http4s.curl.internal.Utils.throwOnError
+import org.http4s.curl.unsafe.CurlExecutorScheduler
 import org.http4s.curl.unsafe.libcurl
 import org.http4s.curl.unsafe.libcurl_const
 import scodec.bits.ByteVector
 
+import scala.annotation.unused
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
 
 import Connection._
 
 final private class Connection private (
-    val handler: Ptr[libcurl.CURL],
+    val handler: CurlEasy,
     receivedQ: Queue[IO, Option[WSFrame]],
     receiving: Ref[SyncIO, Option[Receiving]],
-    established: Deferred[IO, Unit],
     dispatcher: Dispatcher[IO],
+    established: Deferred[IO, Either[Throwable, Unit]],
     breaker: Breaker,
 ) {
 
@@ -65,7 +68,7 @@ final private class Connection private (
       nmemb: CSize,
   ): CSize = {
     val realsize = size * nmemb
-    val meta = libcurl.curl_easy_ws_meta(handler)
+    val meta = handler.wsMeta()
 
     val toEnq = receiving
       .modify {
@@ -100,27 +103,23 @@ final private class Connection private (
     realsize
   }
 
-  def onEstablished(): Unit = dispatcher.unsafeRunAndForget(established.complete(()))
+  private def onEstablished(): Unit = dispatcher.unsafeRunAndForget(established.complete(Right(())))
 
   def onTerminated(result: Either[Throwable, Unit]): Unit =
     dispatcher.unsafeRunAndForget(
-      receivedQ.offer(None) *> IO.fromEither(result)
+      established.complete(result) *> receivedQ.offer(None) *> IO.fromEither(result)
     )
 
   def send(flags: CInt, data: ByteVector): IO[Unit] =
-    established.get >>
-      Utils.newZone.use { implicit zone =>
-        IO {
-          val sent = stackalloc[CSize]()
-          val buffer = data.toPtr
-          val size = data.size.toULong
+    Utils.newZone.use { implicit zone =>
+      IO {
+        val sent = stackalloc[CSize]()
+        val buffer = data.toPtr
+        val size = data.size.toULong
 
-          throwOnError(
-            libcurl
-              .curl_easy_ws_send(handler, buffer, size, sent, 0.toULong, flags.toUInt)
-          )
-        }
+        handler.wsSend(buffer, size, sent, 0.toULong, flags.toUInt)
       }
+    }
 }
 
 private object Connection {
@@ -147,8 +146,74 @@ private object Connection {
       */
     @inline def isNotChunked: Boolean = offset == 0 && noBytesLeft
   }
+  final private val ws = Uri.Scheme.unsafeFromString("ws")
+  final private val wss = Uri.Scheme.unsafeFromString("wss")
+
+  private def setup(req: WSRequest, verbose: Boolean)(con: Connection) =
+    Utils.newZone.use { implicit zone =>
+      IO {
+        val scheme = req.uri.scheme.getOrElse(ws)
+
+        if (scheme != ws && scheme != wss)
+          throw new IllegalArgumentException(
+            s"Websocket client can't handle ${scheme.value} scheme!"
+          )
+
+        val uri = req.uri.copy(scheme = Some(scheme))
+
+        con.handler.setCustomRequest(toCString(req.method.renderString))
+
+        if (verbose)
+          con.handler.setVerbose(true)
+
+        con.handler.setUrl(toCString(uri.renderString))
+
+        // NOTE there is no need to handle object lifetime here,
+        // as Connection class and curl handler have the same lifetime
+        con.handler.setWriteData(Utils.toPtr(con))
+        con.handler.setWriteFunction(recvCallback(_, _, _, _))
+
+        con.handler.setHeaderData(Utils.toPtr(con))
+        con.handler.setHeaderFunction(headerCallback(_, _, _, _))
+
+        var headers: Ptr[libcurl.curl_slist] = null
+        req.headers
+          .foreach { header =>
+            headers = libcurl.curl_slist_append(headers, toCString(header.toString))
+          }
+
+        con.handler.setHttpHeader(headers)
+
+      }
+    }
+
+  /** libcurl write callback */
+  private def recvCallback(
+      buffer: Ptr[CChar],
+      size: CSize,
+      nmemb: CSize,
+      userdata: Ptr[Byte],
+  ): CSize =
+    Utils
+      .fromPtr[Connection](userdata)
+      .onReceive(buffer, size, nmemb)
+
+  private def headerCallback(
+      @unused buffer: Ptr[CChar],
+      size: CSize,
+      nitems: CSize,
+      userdata: Ptr[Byte],
+  ): CSize = {
+    Utils
+      .fromPtr[Connection](userdata)
+      .onEstablished()
+
+    size * nitems
+  }
 
   def apply(
+      req: WSRequest,
+      ec: CurlExecutorScheduler,
       recvBufferSize: Int,
       pauseOn: Int,
       resumeOn: Int,
@@ -157,8 +222,8 @@ private object Connection {
     dispatcher <- Dispatcher.sequential[IO]
     recvQ <- Queue.bounded[IO, Option[WSFrame]](recvBufferSize).toResource
     recv <- Ref[SyncIO].of(Option.empty[Receiving]).to[IO].toResource
-    estab <- IO.deferred[Unit].toResource
-    handler <- Utils.createHandler
+    estab <- IO.deferred[Either[Throwable, Unit]].toResource
+    handler <- CurlEasy()
     brk <- Breaker(
       handler,
       capacity = recvBufferSize,
@@ -166,14 +231,19 @@ private object Connection {
       open = pauseOn,
       verbose,
     ).toResource
-  } yield new Connection(
-    handler,
-    recvQ,
-    recv,
-    estab,
-    dispatcher,
-    brk,
-  )
+    con = new Connection(
+      handler,
+      recvQ,
+      recv,
+      dispatcher,
+      estab,
+      brk,
+    )
+    _ <- setup(req, verbose)(con).toResource
+    _ <- ec.addHandleR(handler.curl, con.onTerminated)
+    // Wait until established or throw error
+    _ <- estab.get.flatMap(IO.fromEither).toResource
+  } yield con
 
 }
 
