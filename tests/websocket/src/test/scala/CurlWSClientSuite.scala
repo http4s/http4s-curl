@@ -71,8 +71,6 @@ class CurlWSClientSuite extends CatsEffectSuite {
     client
       .connectHighLevel(WSRequest(uri""))
       .use_
-      .attemptNarrow[CurlError]
-      .map(_.isLeft)
-      .assert
+      .intercept[CurlError]
   }
 }
