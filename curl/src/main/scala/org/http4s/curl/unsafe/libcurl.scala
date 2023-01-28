@@ -81,9 +81,15 @@ private[curl] object libcurl_const {
 private[curl] object libcurl {
 
   type CURL
-  type CURLcode = CInt
+  final case class CURLcode(value: CInt) extends AnyVal {
+    @inline def isOk: Boolean = value == 0
+    @inline def isError: Boolean = value != 0
+  }
   type CURLM
-  type CURLMcode = CInt
+  final case class CURLMcode(value: CInt) extends AnyVal {
+    @inline def isOk: Boolean = value == 0
+    @inline def isError: Boolean = value != 0
+  }
 
   type CURLMSG = CUnsignedInt
   type CURLMsg
@@ -250,6 +256,9 @@ private[curl] object libcurl {
 
   @name("curl_easy_strerror")
   def curl_easy_strerror(code: CURLcode): Ptr[CChar] = extern
+
+  @name("curl_multi_strerror")
+  def curl_multi_strerror(code: CURLMcode): Ptr[CChar] = extern
 
   @name("curl_easy_setopt")
   def curl_easy_setopt_websocket(

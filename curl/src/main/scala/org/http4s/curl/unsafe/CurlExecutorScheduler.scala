@@ -19,6 +19,7 @@ package org.http4s.curl.unsafe
 import cats.effect.IO
 import cats.effect.kernel.Resource
 import cats.effect.unsafe.PollingExecutorScheduler
+import org.http4s.curl.CurlError
 
 import scala.collection.mutable
 import scala.concurrent.duration.Duration
@@ -49,16 +50,17 @@ final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM],
           null,
         )
 
-        if (pollCode != 0)
-          throw new RuntimeException(s"curl_multi_poll: $pollCode")
+        if (pollCode.isError)
+          throw CurlError.fromMCode(pollCode)
       }
 
       if (noCallbacks) false
       else {
         val runningHandles = stackalloc[CInt]()
         val performCode = libcurl.curl_multi_perform(multiHandle, runningHandles)
-        if (performCode != 0)
-          throw new RuntimeException(s"curl_multi_perform: $performCode")
+
+        if (performCode.isError)
+          throw CurlError.fromMCode(performCode)
 
         while ({
           val msgsInQueue = stackalloc[CInt]()
@@ -71,14 +73,14 @@ final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM],
               callbacks.remove(handle).foreach { cb =>
                 val result = libcurl.curl_CURLMsg_data_result(info)
                 cb(
-                  if (result == 0) Right(())
-                  else Left(new RuntimeException(s"curl_multi_info_read: $result"))
+                  if (result.isOk) Right(())
+                  else Left(CurlError.fromCode(result))
                 )
               }
 
               val code = libcurl.curl_multi_remove_handle(multiHandle, handle)
-              if (code != 0)
-                throw new RuntimeException(s"curl_multi_remove_handle: $code")
+              if (code.isError)
+                throw CurlError.fromMCode(code)
             }
             true
           } else false
@@ -101,8 +103,8 @@ final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM],
     */
   def addHandle(handle: Ptr[libcurl.CURL], cb: Either[Throwable, Unit] => Unit): Unit = {
     val code = libcurl.curl_multi_add_handle(multiHandle, handle)
-    if (code != 0)
-      throw new RuntimeException(s"curl_multi_add_handle: $code")
+    if (code.isError)
+      throw CurlError.fromMCode(code)
     callbacks(handle) = cb
   }
 
@@ -126,8 +128,8 @@ private[curl] object CurlExecutorScheduler {
 
   def apply(pollEvery: Int): (CurlExecutorScheduler, () => Unit) = {
     val initCode = libcurl.curl_global_init(2)
-    if (initCode != 0)
-      throw new RuntimeException(s"curl_global_init: $initCode")
+    if (initCode.isError)
+      throw CurlError.fromCode(initCode)
 
     val multiHandle = libcurl.curl_multi_init()
     if (multiHandle == null)
@@ -136,8 +138,8 @@ private[curl] object CurlExecutorScheduler {
     val shutdown = () => {
       val code = libcurl.curl_multi_cleanup(multiHandle)
       libcurl.curl_global_cleanup()
-      if (code != 0)
-        throw new RuntimeException(s"curl_multi_cleanup: $code")
+      if (code.isError)
+        throw CurlError.fromMCode(code)
     }
 
     (new CurlExecutorScheduler(multiHandle, pollEvery), shutdown)

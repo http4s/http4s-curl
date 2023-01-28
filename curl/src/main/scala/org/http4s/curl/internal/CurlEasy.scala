@@ -29,10 +29,9 @@ final private[curl] class CurlEasy private (val curl: Ptr[CURL], errBuffer: Ptr[
 
   @inline private def throwOnError(thunk: => CURLcode): Unit = {
     val code = thunk
-    if (code != 0) {
-      val info = fromCString(curl_easy_strerror(code))
+    if (code.isError) {
       val details = fromCString(errBuffer)
-      throw new CurlError(code, info, details)
+      throw CurlError.fromCode(code, details)
     }
   }
 
@@ -121,9 +120,8 @@ private[curl] object CurlEasy {
       buf = z.alloc(CURL_ERROR_SIZE.toULong)
       _ <- Resource.eval(IO {
         val code = curl_easy_setopt_errorbuffer(h, CURLOPT_ERRORBUFFER, buf)
-        if (code != 0) {
-          val info = fromCString(curl_easy_strerror(code))
-          throw new CurlError(code, info, "")
+        if (code.isError) {
+          throw CurlError.fromCode(code)
         }
       })
     } yield new CurlEasy(h, buf)

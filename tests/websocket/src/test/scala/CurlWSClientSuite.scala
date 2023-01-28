@@ -66,4 +66,13 @@ class CurlWSClientSuite extends CatsEffectSuite {
       .assertEquals(Nil)
       .parReplicateA_(4)
   }
+
+  clientFixture.test("error") { client =>
+    client
+      .connectHighLevel(WSRequest(uri""))
+      .use_
+      .attemptNarrow[CurlError]
+      .map(_.isLeft)
+      .assert
+  }
 }
