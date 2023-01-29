@@ -31,7 +31,6 @@ final private[curl] class RequestSend private (
     flowControl: FlowControl,
     requestBodyChunk: Ref[SyncIO, Option[ByteVector]],
     requestBodyQueue: Queue[IO, Unit],
-    sendPause: Ref[SyncIO, Boolean],
     dispatcher: Dispatcher[IO],
 ) {
   def pipe: Pipe[IO, Byte, Nothing] = _.chunks
@@ -59,7 +58,7 @@ final private[curl] class RequestSend private (
         bytes.length.toULong
       case Some(_) =>
         dispatcher.unsafeRunAndForget(
-          sendPause.set(true).to[IO] *> requestBodyQueue.offer(())
+          flowControl.onSendPaused.to[IO] *> requestBodyQueue.offer(())
         )
         libcurl_const.CURL_READFUNC_PAUSE.toULong
       case None => 0.toULong
@@ -70,13 +69,11 @@ private[curl] object RequestSend {
   def apply(flowControl: FlowControl): Resource[IO, RequestSend] = for {
     requestBodyChunk <- Ref[SyncIO].of(Option(ByteVector.empty)).to[IO].toResource
     requestBodyQueue <- Queue.synchronous[IO, Unit].toResource
-    sendPause <- Ref[SyncIO].of(false).to[IO].toResource
     dispatcher <- Dispatcher.sequential[IO]
   } yield new RequestSend(
     flowControl,
     requestBodyChunk,
     requestBodyQueue,
-    sendPause,
     dispatcher,
   )
   private[curl] def readCallback(

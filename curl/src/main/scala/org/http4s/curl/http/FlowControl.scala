@@ -40,6 +40,7 @@ final private[curl] class FlowControl private (
     )
 
   def onRecvPaused: SyncIO[Unit] = recvPause.set(true)
+  def onSendPaused: SyncIO[Unit] = sendPause.set(true)
 
   def unpauseSend: IO[Unit] = sendPause.set(false).to[IO] *>
     recvPause.get.to[IO].flatMap { p =>
