@@ -63,7 +63,11 @@ final private[curl] class RequestRecv private (
     .toResource
 
   @inline def onTerminated(x: Either[Throwable, Unit]): Unit =
-    dispatcher.unsafeRunAndForget(done.complete(x) *> responseBodyQueue.offer(None))
+    dispatcher.unsafeRunAndForget(
+      // TODO refactor to make it simpler
+      x.fold(x => responseD.complete(Left(x)), _ => IO.unit) *>
+        done.complete(x) *> responseBodyQueue.offer(None)
+    )
 
   @inline def onWrite(
       buffer: Ptr[CChar],

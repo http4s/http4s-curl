@@ -60,6 +60,14 @@ class CurlClientSuite extends CatsEffectSuite {
       .assert
   }
 
+  clientFixture.test("error") { client =>
+    client.expect[String]("unsupported://server").intercept[CurlError]
+  }
+
+  clientFixture.test("error") { client =>
+    client.expect[String]("").intercept[CurlError]
+  }
+
   clientFixture.test("3 post echos") { client =>
     Random.scalaUtilRandom[IO].flatMap { random =>
       random
