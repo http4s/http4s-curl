@@ -35,7 +35,7 @@ class CurlClientSuite extends CatsEffectSuite {
   override lazy val munitIORuntime: IORuntime = CurlRuntime.global
 
   val clientFixture: SyncIO[FunFixture[Client[IO]]] = ResourceFunFixture(
-    Resource.eval(CurlClient.get)
+    Resource.eval(http.CurlClient.get)
   )
 
   clientFixture.test("3 get echos") { client =>
