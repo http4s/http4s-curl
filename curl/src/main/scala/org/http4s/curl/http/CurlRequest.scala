@@ -19,8 +19,8 @@ package org.http4s.curl.http
 import cats.effect._
 import org.http4s.Request
 import org.http4s.Response
-import org.http4s.curl.internal.CurlEasy
 import org.http4s.curl.internal.Utils
+import org.http4s.curl.internal._
 import org.http4s.curl.unsafe.CurlExecutorScheduler
 
 private[curl] object CurlRequest {
@@ -30,55 +30,54 @@ private[curl] object CurlRequest {
       send: RequestSend,
       recv: RequestRecv,
       req: Request[IO],
-  ): Resource[IO, Unit] = Utils.newZone.evalMap(implicit zone =>
-    IO {
-      // TODO add in options
-      // handle.setVerbose(true)
+  ): Resource[IO, Unit] = Utils.newZone.flatMap(implicit zone =>
+    CurlSList().evalMap(headers =>
+      IO {
+        // TODO add in options
+        // handle.setVerbose(true)
 
-      import org.http4s.curl.unsafe.libcurl
-      import org.http4s.curl.unsafe.libcurl_const
-      import scala.scalanative.unsafe._
-      import org.http4s.Header
-      import org.http4s.HttpVersion
-      import org.typelevel.ci._
+        import org.http4s.curl.unsafe.libcurl_const
+        import scala.scalanative.unsafe._
+        import org.http4s.Header
+        import org.http4s.HttpVersion
+        import org.typelevel.ci._
 
-      handle.setCustomRequest(toCString(req.method.renderString))
+        handle.setCustomRequest(toCString(req.method.renderString))
 
-      handle.setUpload(true)
+        handle.setUpload(true)
 
-      handle.setUrl(toCString(req.uri.renderString))
+        handle.setUrl(toCString(req.uri.renderString))
 
-      val httpVersion = req.httpVersion match {
-        case HttpVersion.`HTTP/1.0` => libcurl_const.CURL_HTTP_VERSION_1_0
-        case HttpVersion.`HTTP/1.1` => libcurl_const.CURL_HTTP_VERSION_1_1
-        case HttpVersion.`HTTP/2` => libcurl_const.CURL_HTTP_VERSION_2
-        case HttpVersion.`HTTP/3` => libcurl_const.CURL_HTTP_VERSION_3
-        case _ => libcurl_const.CURL_HTTP_VERSION_NONE
-      }
-      handle.setHttpVersion(httpVersion)
-
-      var headers: Ptr[libcurl.curl_slist] = null
-      req.headers // curl adds these headers automatically, so we explicitly disable them
-        .transform(Header.Raw(ci"Expect", "") :: Header.Raw(ci"Transfer-Encoding", "") :: _)
-        .foreach { header =>
-          headers = libcurl.curl_slist_append(headers, toCString(header.toString))
+        val httpVersion = req.httpVersion match {
+          case HttpVersion.`HTTP/1.0` => libcurl_const.CURL_HTTP_VERSION_1_0
+          case HttpVersion.`HTTP/1.1` => libcurl_const.CURL_HTTP_VERSION_1_1
+          case HttpVersion.`HTTP/2` => libcurl_const.CURL_HTTP_VERSION_2
+          case HttpVersion.`HTTP/3` => libcurl_const.CURL_HTTP_VERSION_3
+          case _ => libcurl_const.CURL_HTTP_VERSION_NONE
         }
-      handle.setHttpHeader(headers)
+        handle.setHttpVersion(httpVersion)
 
-      // NOTE that pointers are to data that is handled by GC
-      // and have proper lifetime management
-      // so no need to handle them explicitly anymore
-      handle.setReadData(Utils.toPtr(send))
-      handle.setReadFunction(RequestSend.readCallback(_, _, _, _))
+        req.headers // curl adds these headers automatically, so we explicitly disable them
+          .transform(Header.Raw(ci"Expect", "") :: Header.Raw(ci"Transfer-Encoding", "") :: _)
+          .foreach(header => headers.append(header.toString))
 
-      handle.setHeaderData(Utils.toPtr(recv))
-      handle.setHeaderFunction(RequestRecv.headerCallback(_, _, _, _))
+        handle.setHttpHeader(headers.toPtr)
 
-      handle.setWriteData(Utils.toPtr(recv))
-      handle.setWriteFunction(RequestRecv.writeCallback(_, _, _, _))
+        // NOTE that pointers are to data that is handled by GC
+        // and have proper lifetime management
+        // so no need to handle them explicitly anymore
+        handle.setReadData(Utils.toPtr(send))
+        handle.setReadFunction(RequestSend.readCallback(_, _, _, _))
 
-      ec.addHandle(handle.curl, recv.onTerminated)
-    }
+        handle.setHeaderData(Utils.toPtr(recv))
+        handle.setHeaderFunction(RequestRecv.headerCallback(_, _, _, _))
+
+        handle.setWriteData(Utils.toPtr(recv))
+        handle.setWriteFunction(RequestRecv.writeCallback(_, _, _, _))
+
+        ec.addHandle(handle.curl, recv.onTerminated)
+      }
+    )
   )
 
   def apply(ec: CurlExecutorScheduler, req: Request[IO]): Resource[IO, Response[IO]] = for {
