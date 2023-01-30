@@ -30,61 +30,61 @@ private[curl] object CurlRequest {
       send: RequestSend,
       recv: RequestRecv,
       req: Request[IO],
-  ): Resource[IO, Unit] = Utils.newZone.flatMap(implicit zone =>
-    CurlSList().evalMap(headers =>
-      IO {
-        // TODO add in options
-        // handle.setVerbose(true)
+  ): Resource[IO, Unit] =
+    Utils.newZone.flatMap(implicit zone =>
+      CurlSList().evalMap(headers =>
+        IO {
+          // TODO add in options
+          // handle.setVerbose(true)
 
-        import org.http4s.curl.unsafe.libcurl_const
-        import scala.scalanative.unsafe._
-        import org.http4s.Header
-        import org.http4s.HttpVersion
-        import org.typelevel.ci._
+          import org.http4s.curl.unsafe.libcurl_const
+          import scala.scalanative.unsafe._
+          import org.http4s.Header
+          import org.http4s.HttpVersion
+          import org.typelevel.ci._
 
-        handle.setCustomRequest(toCString(req.method.renderString))
+          handle.setCustomRequest(toCString(req.method.renderString))
 
-        handle.setUpload(true)
+          handle.setUpload(true)
 
-        handle.setUrl(toCString(req.uri.renderString))
+          handle.setUrl(toCString(req.uri.renderString))
 
-        val httpVersion = req.httpVersion match {
-          case HttpVersion.`HTTP/1.0` => libcurl_const.CURL_HTTP_VERSION_1_0
-          case HttpVersion.`HTTP/1.1` => libcurl_const.CURL_HTTP_VERSION_1_1
-          case HttpVersion.`HTTP/2` => libcurl_const.CURL_HTTP_VERSION_2
-          case HttpVersion.`HTTP/3` => libcurl_const.CURL_HTTP_VERSION_3
-          case _ => libcurl_const.CURL_HTTP_VERSION_NONE
+          val httpVersion = req.httpVersion match {
+            case HttpVersion.`HTTP/1.0` => libcurl_const.CURL_HTTP_VERSION_1_0
+            case HttpVersion.`HTTP/1.1` => libcurl_const.CURL_HTTP_VERSION_1_1
+            case HttpVersion.`HTTP/2` => libcurl_const.CURL_HTTP_VERSION_2
+            case HttpVersion.`HTTP/3` => libcurl_const.CURL_HTTP_VERSION_3
+            case _ => libcurl_const.CURL_HTTP_VERSION_NONE
+          }
+          handle.setHttpVersion(httpVersion)
+
+          req.headers // curl adds these headers automatically, so we explicitly disable them
+            .transform(Header.Raw(ci"Expect", "") :: Header.Raw(ci"Transfer-Encoding", "") :: _)
+            .foreach(header => headers.append(header.toString))
+
+          handle.setHttpHeader(headers.toPtr)
+
+          handle.setReadData(Utils.toPtr(send))
+          handle.setReadFunction(RequestSend.readCallback(_, _, _, _))
+
+          handle.setHeaderData(Utils.toPtr(recv))
+          handle.setHeaderFunction(RequestRecv.headerCallback(_, _, _, _))
+
+          handle.setWriteData(Utils.toPtr(recv))
+          handle.setWriteFunction(RequestRecv.writeCallback(_, _, _, _))
+
+          ec.addHandle(handle.curl, recv.onTerminated)
         }
-        handle.setHttpVersion(httpVersion)
-
-        req.headers // curl adds these headers automatically, so we explicitly disable them
-          .transform(Header.Raw(ci"Expect", "") :: Header.Raw(ci"Transfer-Encoding", "") :: _)
-          .foreach(header => headers.append(header.toString))
-
-        handle.setHttpHeader(headers.toPtr)
-
-        // NOTE that pointers are to data that is handled by GC
-        // and have proper lifetime management
-        // so no need to handle them explicitly anymore
-        handle.setReadData(Utils.toPtr(send))
-        handle.setReadFunction(RequestSend.readCallback(_, _, _, _))
-
-        handle.setHeaderData(Utils.toPtr(recv))
-        handle.setHeaderFunction(RequestRecv.headerCallback(_, _, _, _))
-
-        handle.setWriteData(Utils.toPtr(recv))
-        handle.setWriteFunction(RequestRecv.writeCallback(_, _, _, _))
-
-        ec.addHandle(handle.curl, recv.onTerminated)
-      }
+      )
     )
-  )
 
   def apply(ec: CurlExecutorScheduler, req: Request[IO]): Resource[IO, Response[IO]] = for {
+    gc <- GCRoot()
     handle <- CurlEasy()
     flow <- FlowControl(handle)
     send <- RequestSend(flow)
     recv <- RequestRecv(flow)
+    _ <- gc.add(send, recv)
     _ <- setup(handle, ec, send, recv, req)
     _ <- req.body.through(send.pipe).compile.drain.background
     resp <- recv.response()

@@ -169,8 +169,6 @@ private object Connection {
 
           con.handler.setUrl(toCString(uri.renderString))
 
-          // NOTE there is no need to handle object lifetime here,
-          // as Connection class and curl handler have the same lifetime
           con.handler.setWriteData(Utils.toPtr(con))
           con.handler.setWriteFunction(recvCallback(_, _, _, _))
 
@@ -217,6 +215,7 @@ private object Connection {
       resumeOn: Int,
       verbose: Boolean,
   ): Resource[IO, Connection] = for {
+    gc <- GCRoot()
     dispatcher <- Dispatcher.sequential[IO]
     recvQ <- Queue.bounded[IO, Option[WSFrame]](recvBufferSize).toResource
     recv <- Ref[SyncIO].of(Option.empty[Receiving]).to[IO].toResource
@@ -238,6 +237,7 @@ private object Connection {
       brk,
     )
     _ <- setup(req, verbose)(con)
+    _ <- gc.add(con)
     _ <- ec.addHandleR(handler.curl, con.onTerminated)
     // Wait until established or throw error
     _ <- estab.get.flatMap(IO.fromEither).toResource
