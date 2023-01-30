@@ -43,7 +43,7 @@ trait CurlApp extends IOApp {
   }
 
   private def scheduler = runtime.compute.asInstanceOf[CurlExecutorScheduler]
-  final lazy val curlClient: Client[IO] = CurlClient(scheduler)
+  final lazy val curlClient: Client[IO] = http.CurlClient(scheduler)
 
   /** gets websocket client if current libcurl environment supports it */
   final def websocket(

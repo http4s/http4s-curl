@@ -27,8 +27,8 @@ import cats.effect.std.Queue
 import cats.implicits._
 import org.http4s.Uri
 import org.http4s.client.websocket._
-import org.http4s.curl.internal.CurlEasy
 import org.http4s.curl.internal.Utils
+import org.http4s.curl.internal._
 import org.http4s.curl.unsafe.CurlExecutorScheduler
 import org.http4s.curl.unsafe.libcurl
 import org.http4s.curl.unsafe.libcurl_const
@@ -149,42 +149,38 @@ private object Connection {
   final private val ws = Uri.Scheme.unsafeFromString("ws")
   final private val wss = Uri.Scheme.unsafeFromString("wss")
 
-  private def setup(req: WSRequest, verbose: Boolean)(con: Connection) =
-    Utils.newZone.use { implicit zone =>
-      IO {
-        val scheme = req.uri.scheme.getOrElse(ws)
+  private def setup(req: WSRequest, verbose: Boolean)(con: Connection): Resource[IO, Unit] =
+    Utils.newZone.flatMap { implicit zone =>
+      CurlSList().evalMap(headers =>
+        IO {
+          val scheme = req.uri.scheme.getOrElse(ws)
 
-        if (scheme != ws && scheme != wss)
-          throw new IllegalArgumentException(
-            s"Websocket client can't handle ${scheme.value} scheme!"
-          )
+          if (scheme != ws && scheme != wss)
+            throw new IllegalArgumentException(
+              s"Websocket client can't handle ${scheme.value} scheme!"
+            )
 
-        val uri = req.uri.copy(scheme = Some(scheme))
+          val uri = req.uri.copy(scheme = Some(scheme))
 
-        con.handler.setCustomRequest(toCString(req.method.renderString))
+          con.handler.setCustomRequest(toCString(req.method.renderString))
 
-        if (verbose)
-          con.handler.setVerbose(true)
+          if (verbose)
+            con.handler.setVerbose(true)
 
-        con.handler.setUrl(toCString(uri.renderString))
+          con.handler.setUrl(toCString(uri.renderString))
 
-        // NOTE there is no need to handle object lifetime here,
-        // as Connection class and curl handler have the same lifetime
-        con.handler.setWriteData(Utils.toPtr(con))
-        con.handler.setWriteFunction(recvCallback(_, _, _, _))
+          con.handler.setWriteData(Utils.toPtr(con))
+          con.handler.setWriteFunction(recvCallback(_, _, _, _))
 
-        con.handler.setHeaderData(Utils.toPtr(con))
-        con.handler.setHeaderFunction(headerCallback(_, _, _, _))
+          con.handler.setHeaderData(Utils.toPtr(con))
+          con.handler.setHeaderFunction(headerCallback(_, _, _, _))
 
-        var headers: Ptr[libcurl.curl_slist] = null
-        req.headers
-          .foreach { header =>
-            headers = libcurl.curl_slist_append(headers, toCString(header.toString))
-          }
+          req.headers.foreach(header => headers.append(header.toString))
 
-        con.handler.setHttpHeader(headers)
+          con.handler.setHttpHeader(headers.toPtr)
 
-      }
+        }
+      )
     }
 
   /** libcurl write callback */
@@ -219,6 +215,7 @@ private object Connection {
       resumeOn: Int,
       verbose: Boolean,
   ): Resource[IO, Connection] = for {
+    gc <- GCRoot()
     dispatcher <- Dispatcher.sequential[IO]
     recvQ <- Queue.bounded[IO, Option[WSFrame]](recvBufferSize).toResource
     recv <- Ref[SyncIO].of(Option.empty[Receiving]).to[IO].toResource
@@ -239,7 +236,8 @@ private object Connection {
       estab,
       brk,
     )
-    _ <- setup(req, verbose)(con).toResource
+    _ <- setup(req, verbose)(con)
+    _ <- gc.add(con)
     _ <- ec.addHandleR(handler.curl, con.onTerminated)
     // Wait until established or throw error
     _ <- estab.get.flatMap(IO.fromEither).toResource
