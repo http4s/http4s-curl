@@ -8,7 +8,7 @@ A client for [http4s](https://http4s.org/) on [Scala Native](https://github.com/
 
 ```scala
 libraryDependencies ++= Seq(
-  "org.http4s" %%% "http4s-curl" % "0.1.1"
+  "org.http4s" %%% "http4s-curl" % "0.2.0"
 )
 ```
 
