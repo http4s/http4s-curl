@@ -21,7 +21,7 @@ ThisBuild / nativeConfig ~= { c =>
       .withLinkingOptions(c.linkingOptions :+ s"-L${vcpkgBaseDir}/installed/x64-windows/lib/")
   } else c
 
-  platformOptions.withLinkingOptions(platformOptions.linkingOptions :+ "-lcurl")
+  platformOptions
 }
 
 ThisBuild / envVars ++= {
