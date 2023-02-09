@@ -23,6 +23,7 @@ unsigned int org_http4s_curl_get_version_num(curl_version_info_data *data){
 }
 
 CURLversion org_http4s_curl_version_now(){
+  // This is the minimum version we need currently
   return CURLVERSION_FIRST;
 }
 

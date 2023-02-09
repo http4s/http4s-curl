@@ -100,7 +100,7 @@ private[curl] object libcurl {
 
   type CURLoption = CUnsignedInt
 
-  type CURLversion
+  type CURLversion = CUnsignedInt
 
   type curl_slist
 
