@@ -14,12 +14,17 @@ CURLcode org_http4s_curl_CURLMsg_data_result(CURLMsg *curlMsg) {
   return curlMsg->data.result;
 }
 
-const char * const * org_http4s_curl_get_protocols(){
-  return curl_version_info(CURLVERSION_NOW) -> protocols;
+const char * const * org_http4s_curl_get_protocols(curl_version_info_data *data){
+  return data -> protocols;
 }
 
-unsigned int org_http4s_curl_get_version_num(){
-  return curl_version_info(CURLVERSION_NOW) -> version_num;
+unsigned int org_http4s_curl_get_version_num(curl_version_info_data *data){
+  return data -> version_num;
+}
+
+CURLversion org_http4s_curl_version_now(){
+  // This is the minimum version we need currently
+  return CURLVERSION_FIRST;
 }
 
 #endif // has_include

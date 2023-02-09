@@ -100,7 +100,11 @@ private[curl] object libcurl {
 
   type CURLoption = CUnsignedInt
 
+  type CURLversion = CUnsignedInt
+
   type curl_slist
+
+  type curl_version_info_data
 
   type header_callback = CFuncPtr4[Ptr[CChar], CSize, CSize, Ptr[Byte], CSize]
 
@@ -111,6 +115,8 @@ private[curl] object libcurl {
   type curl_ws_frame = CStruct4[CInt, CInt, Long, Long] // age, flags, offset, bytesleft
 
   def curl_version(): Ptr[CChar] = extern
+
+  def curl_version_info(age: CURLversion): Ptr[curl_version_info_data] = extern
 
   def curl_global_init(flags: CLongInt): CURLcode = extern
 
@@ -143,10 +149,13 @@ private[curl] object libcurl {
   def curl_CURLMsg_data_result(curlMsg: Ptr[CURLMsg]): CURLcode = extern
 
   @name("org_http4s_curl_get_protocols")
-  def curl_protocols_info(): Ptr[CString] = extern
+  def curl_protocols_info(data: Ptr[curl_version_info_data]): Ptr[CString] = extern
 
   @name("org_http4s_curl_get_version_num")
-  def curl_version_number(): CInt = extern
+  def curl_version_number(data: Ptr[curl_version_info_data]): CInt = extern
+
+  @name("org_http4s_curl_version_now")
+  def CURLVERSION_NOW(): CURLversion = extern
 
   def curl_multi_add_handle(multi_handle: Ptr[CURLM], curl_handle: Ptr[CURL]): CURLMcode = extern
 
