@@ -22,13 +22,13 @@ import org.http4s.curl.unsafe.CurlRuntime
 class CurlRuntimeSuite extends FunSuite {
 
   test("curl version") {
-    val prefix = "libcurl/7."
-    assertEquals(CurlRuntime.curlVersion.take(prefix.length), prefix)
+    val prefixPattern = """^libcurl\/[78]\..+$""".r
+    assert(prefixPattern.matches(CurlRuntime.curlVersion))
   }
 
   test("curl version number") {
     assert(CurlRuntime.curlVersionNumber > 0x070000)
-    assert(CurlRuntime.curlVersionTriple._1 == 7)
+    assert(CurlRuntime.curlVersionTriple._1 >= 7)
   }
 
   test("curl protocols") {
