@@ -17,9 +17,8 @@
 package org.http4s.curl.http
 
 import cats.effect._
-import cats.effect.implicits._
 import cats.effect.std._
-import cats.implicits._
+import cats.syntax.all._
 import fs2.Chunk
 import fs2.Stream
 import org.http4s.Header
