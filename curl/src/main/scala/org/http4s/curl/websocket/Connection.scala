@@ -19,7 +19,6 @@ package org.http4s.curl.websocket
 import cats.effect.IO
 import cats.effect.Resource
 import cats.effect.SyncIO
-import cats.effect.implicits._
 import cats.effect.kernel.Deferred
 import cats.effect.kernel.Ref
 import cats.effect.std.Dispatcher
