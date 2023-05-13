@@ -17,7 +17,6 @@
 package org.http4s.curl.http
 
 import cats.effect._
-import cats.effect.implicits._
 import org.http4s.curl.internal.CurlEasy
 import org.http4s.curl.unsafe.libcurl_const
 
