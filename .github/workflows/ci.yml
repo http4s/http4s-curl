@@ -35,14 +35,14 @@ jobs:
           - macos-11
           - macos-12
           - windows-2022
-        scala: [3.2.2, 2.13.10]
+        scala: [3.3.0, 2.13.10]
         java: [temurin@17]
         project: [rootJVM, rootNative]
         include:
           - os: ubuntu-latest
             experimental: yes
         exclude:
-          - scala: 3.2.2
+          - scala: 3.3.0
             os: windows-2022
           - project: rootJVM
     runs-on: ${{ matrix.os }}
@@ -248,12 +248,12 @@ jobs:
           vcpkg install --triplet x64-windows curl
           cp "C:\vcpkg\installed\x64-windows\lib\libcurl.lib" "C:\vcpkg\installed\x64-windows\lib\curl.lib"
 
-      - name: Download target directories (3.2.2, rootNative)
+      - name: Download target directories (3.3.0, rootNative)
         uses: actions/download-artifact@v3
         with:
-          name: target-${{ matrix.os }}-${{ matrix.java }}-3.2.2-rootNative
+          name: target-${{ matrix.os }}-${{ matrix.java }}-3.3.0-rootNative
 
-      - name: Inflate target directories (3.2.2, rootNative)
+      - name: Inflate target directories (3.3.0, rootNative)
         run: |
           tar xf targets.tar
           rm targets.tar
