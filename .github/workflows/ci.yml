@@ -35,7 +35,7 @@ jobs:
               - macos-11
               - macos-12
               - windows-2022
-        scala: [3.3.0, 2.13.10]
+        scala: [3.3.0, 2.13.11]
         java: [temurin@17]
         project: [rootJVM, rootNative]
         include:
