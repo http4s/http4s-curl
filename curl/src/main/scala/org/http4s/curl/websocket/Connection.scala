@@ -29,6 +29,7 @@ import org.http4s.client.websocket._
 import org.http4s.curl.internal.Utils
 import org.http4s.curl.internal._
 import org.http4s.curl.unsafe.CurlExecutorScheduler
+import org.http4s.curl.unsafe.CurlMultiSocket
 import org.http4s.curl.unsafe.libcurl
 import org.http4s.curl.unsafe.libcurl_const
 import scodec.bits.ByteVector
@@ -238,6 +239,42 @@ private object Connection {
     _ <- setup(req, verbose)(con)
     _ <- gc.add(con)
     _ <- ec.addHandleR(handler.curl, con.onTerminated)
+    // Wait until established or throw error
+    _ <- estab.get.flatMap(IO.fromEither).toResource
+  } yield con
+
+  def apply(
+      req: WSRequest,
+      ms: CurlMultiSocket,
+      recvBufferSize: Int,
+      pauseOn: Int,
+      resumeOn: Int,
+      verbose: Boolean,
+  ): Resource[IO, Connection] = for {
+    gc <- GCRoot()
+    dispatcher <- Dispatcher.sequential[IO]
+    recvQ <- Queue.bounded[IO, Option[WSFrame]](recvBufferSize).toResource
+    recv <- Ref[SyncIO].of(Option.empty[Receiving]).to[IO].toResource
+    estab <- IO.deferred[Either[Throwable, Unit]].toResource
+    handler <- CurlEasy()
+    brk <- Breaker(
+      handler,
+      capacity = recvBufferSize,
+      close = resumeOn,
+      open = pauseOn,
+      verbose,
+    ).toResource
+    con = new Connection(
+      handler,
+      recvQ,
+      recv,
+      dispatcher,
+      estab,
+      brk,
+    )
+    _ <- setup(req, verbose)(con)
+    _ <- gc.add(con)
+    _ <- ms.addHandlerNonTerminating(handler, con.onTerminated)
     // Wait until established or throw error
     _ <- estab.get.flatMap(IO.fromEither).toResource
   } yield con

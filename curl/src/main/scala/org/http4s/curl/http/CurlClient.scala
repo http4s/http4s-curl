@@ -19,9 +19,12 @@ package org.http4s.curl.http
 import cats.effect._
 import org.http4s.client.Client
 import org.http4s.curl.unsafe.CurlExecutorScheduler
+import org.http4s.curl.unsafe.CurlMultiSocket
 
 private[curl] object CurlClient {
   def apply(ec: CurlExecutorScheduler): Client[IO] = Client(CurlRequest(ec, _))
+
+  def multiSocket(ms: CurlMultiSocket): Client[IO] = Client(CurlRequest.applyMultiSocket(ms, _))
 
   def get: IO[Client[IO]] = IO.executionContext.flatMap {
     case ec: CurlExecutorScheduler => IO.pure(apply(ec))

@@ -128,6 +128,9 @@ private[curl] object libcurl_const {
   // websocket options flags
   final val CURLWS_RAW_MODE = 1 << 0
 
+  final val CURL_SOCKET_BAD = -1
+  final val CURL_SOCKET_TIMEOUT = CURL_SOCKET_BAD
+
   final val CURL_CSELECT_IN = 0x01
   final val CURL_CSELECT_OUT = 0x02
   final val CURL_CSELECT_ERR = 0x04
@@ -137,15 +140,6 @@ private[curl] object libcurl_const {
   final val CURL_POLL_OUT = 2
   final val CURL_POLL_INOUT = 3
   final val CURL_POLL_REMOVE = 4
-}
-
-final private[curl] case class CURLcode(value: CInt) extends AnyVal {
-  @inline def isOk: Boolean = value == 0
-  @inline def isError: Boolean = value != 0
-}
-final private[curl] case class CURLMcode(value: CInt) extends AnyVal {
-  @inline def isOk: Boolean = value == 0
-  @inline def isError: Boolean = value != 0
 }
 
 @link("curl")
@@ -369,7 +363,7 @@ private[curl] object libcurl {
   @name("curl_multi_setopt")
   def curl_multi_setopt_timerdata(
       curl: Ptr[CURLM],
-      option: CURLMOPT_TIMERFUNCTION.type,
+      option: CURLMOPT_TIMERDATA.type,
       pointer: Ptr[Byte],
   ): CURLMcode =
     extern

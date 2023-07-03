@@ -21,11 +21,13 @@ import cats.effect.kernel.Resource
 import cats.effect.unsafe.PollingExecutorScheduler
 import org.http4s.curl.CurlError
 
+import scala.annotation.nowarn
 import scala.collection.mutable
 import scala.concurrent.duration.Duration
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
 
+@nowarn
 final private[curl] class CurlExecutorScheduler(multiHandle: Ptr[libcurl.CURLM], pollEvery: Int)
     extends PollingExecutorScheduler(pollEvery) {
 
