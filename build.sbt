@@ -1,6 +1,6 @@
 import Versions._
 
-ThisBuild / tlBaseVersion := "0.2"
+ThisBuild / tlBaseVersion := "0.3"
 
 ThisBuild / developers := List(
   tlGitHubDev("armanbilge", "Arman Bilge")
