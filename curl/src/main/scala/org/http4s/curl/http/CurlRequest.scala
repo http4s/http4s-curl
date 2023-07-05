@@ -22,7 +22,6 @@ import org.http4s.Response
 import org.http4s.curl.internal.Utils
 import org.http4s.curl.internal._
 import org.http4s.curl.unsafe.CurlExecutorScheduler
-import org.http4s.curl.unsafe.CurlMultiSocket
 
 private[curl] object CurlRequest {
   private def setup(
@@ -142,7 +141,7 @@ private[curl] object CurlRequest {
     resp <- recv.response()
   } yield resp
 
-  def applyMultiSocket(ms: CurlMultiSocket, req: Request[IO]): Resource[IO, Response[IO]] = for {
+  def applyMultiSocket(ms: CurlMulti, req: Request[IO]): Resource[IO, Response[IO]] = for {
     gc <- GCRoot()
     handle <- CurlEasy()
     flow <- FlowControl(handle)

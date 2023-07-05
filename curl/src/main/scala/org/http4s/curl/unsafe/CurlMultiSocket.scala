@@ -61,7 +61,7 @@ private[curl] object CurlMultiSocket {
       throw CurlError.fromCode(initCode)
   }
 
-  def apply(): Resource[IO, CurlMultiSocket] = for {
+  def apply(): Resource[IO, CurlMulti] = for {
     _ <- IO(curlGlobalSetup).toResource
     handle <- newCurlMutli
     fdPoller <- getFDPoller.toResource
@@ -135,7 +135,7 @@ private[curl] object CurlMultiSocket {
       mapping: AtomicCell[IO, State],
       disp: Dispatcher[IO],
       timeout: Ref[IO, Option[FiberIO[Unit]]],
-  ) extends CurlMultiSocket {
+  ) extends CurlMulti {
 
     private def init = IO {
       val data = Utils.toPtr(this)
@@ -318,12 +318,4 @@ private[curl] object CurlMultiSocket {
     private def writeLoop(fd: libcurl.curl_socket_t, p: FileDescriptorPollHandle) =
       p.pollWriteRec(())(_ => action(fd, libcurl_const.CURL_CSELECT_OUT)).start
   }
-}
-
-private[curl] trait CurlMultiSocket {
-  def addHandlerTerminating(easy: CurlEasy, cb: Either[Throwable, Unit] => Unit): IO[Unit]
-  def addHandlerNonTerminating(
-      easy: CurlEasy,
-      cb: Either[Throwable, Unit] => Unit,
-  ): Resource[IO, Unit]
 }

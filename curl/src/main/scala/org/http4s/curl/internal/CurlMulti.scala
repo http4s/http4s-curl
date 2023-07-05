@@ -14,20 +14,15 @@
  * limitations under the License.
  */
 
-package org.http4s.curl.http
+package org.http4s.curl.internal
 
-import cats.effect._
-import org.http4s.client.Client
-import org.http4s.curl.internal.CurlMulti
-import org.http4s.curl.unsafe.CurlExecutorScheduler
+import cats.effect.IO
+import cats.effect.kernel.Resource
 
-private[curl] object CurlClient {
-  def apply(ec: CurlExecutorScheduler): Client[IO] = Client(CurlRequest(ec, _))
-
-  def multiSocket(ms: CurlMulti): Client[IO] = Client(CurlRequest.applyMultiSocket(ms, _))
-
-  def get: IO[Client[IO]] = IO.executionContext.flatMap {
-    case ec: CurlExecutorScheduler => IO.pure(apply(ec))
-    case _ => IO.raiseError(new RuntimeException("Not running on CurlExecutorScheduler"))
-  }
+private[curl] trait CurlMulti {
+  def addHandlerTerminating(easy: CurlEasy, cb: Either[Throwable, Unit] => Unit): IO[Unit]
+  def addHandlerNonTerminating(
+      easy: CurlEasy,
+      cb: Either[Throwable, Unit] => Unit,
+  ): Resource[IO, Unit]
 }

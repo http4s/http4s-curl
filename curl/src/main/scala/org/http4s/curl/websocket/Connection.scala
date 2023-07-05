@@ -29,7 +29,6 @@ import org.http4s.client.websocket._
 import org.http4s.curl.internal.Utils
 import org.http4s.curl.internal._
 import org.http4s.curl.unsafe.CurlExecutorScheduler
-import org.http4s.curl.unsafe.CurlMultiSocket
 import org.http4s.curl.unsafe.libcurl
 import org.http4s.curl.unsafe.libcurl_const
 import scodec.bits.ByteVector
@@ -245,7 +244,7 @@ private object Connection {
 
   def apply(
       req: WSRequest,
-      ms: CurlMultiSocket,
+      ms: CurlMulti,
       recvBufferSize: Int,
       pauseOn: Int,
       resumeOn: Int,
