@@ -25,7 +25,6 @@ import cats.effect.kernel.Resource
 import cats.effect.std.AtomicCell
 import cats.effect.std.Dispatcher
 import cats.syntax.all._
-import org.http4s.curl.CurlError
 import org.http4s.curl.internal._
 
 import scala.concurrent.duration._
@@ -42,33 +41,13 @@ private[curl] object CurlMultiSocket {
     )
   )
 
-  private val newCurlMutli = Resource.make(IO {
-    val multiHandle = libcurl.curl_multi_init()
-    if (multiHandle == null)
-      throw new RuntimeException("curl_multi_init")
-    multiHandle
-  })(mhandle =>
-    IO {
-      val code = libcurl.curl_multi_cleanup(mhandle)
-      if (code.isError)
-        throw CurlError.fromMCode(code)
-    }
-  )
-
-  private lazy val curlGlobalSetup = {
-    val initCode = libcurl.curl_global_init(2)
-    if (initCode.isError)
-      throw CurlError.fromCode(initCode)
-  }
-
-  def apply(): Resource[IO, CurlMulti] = for {
-    _ <- IO(curlGlobalSetup).toResource
-    handle <- newCurlMutli
+  def apply(): Resource[IO, CurlMultiDriver] = for {
+    multi <- CurlMulti()
     fdPoller <- getFDPoller.toResource
     disp <- Dispatcher.sequential[IO]
     mapping <- AtomicCell[IO].of(State.empty).toResource
     timeout <- IO.ref[Option[FiberIO[Unit]]](None).toResource
-    cms = new CurlMultiSocketImpl(handle, fdPoller, mapping, disp, timeout)
+    cms = new CurlMultiSocketImpl(multi, fdPoller, mapping, disp, timeout)
     _ <- cms.setup
   } yield cms
 
@@ -130,19 +109,19 @@ private[curl] object CurlMultiSocket {
   }
 
   final private class CurlMultiSocketImpl(
-      multiHandle: Ptr[libcurl.CURLM],
+      multiHandle: CurlMulti,
       fdpoller: FileDescriptorPoller,
       mapping: AtomicCell[IO, State],
       disp: Dispatcher[IO],
       timeout: Ref[IO, Option[FiberIO[Unit]]],
-  ) extends CurlMulti {
+  ) extends CurlMultiDriver {
 
     private def init = IO {
       val data = Utils.toPtr(this)
 
       libcurl
         .curl_multi_setopt_timerdata(
-          multiHandle,
+          multiHandle.multiHandle,
           libcurl_const.CURLMOPT_TIMERDATA,
           data,
         )
@@ -150,7 +129,7 @@ private[curl] object CurlMultiSocket {
 
       libcurl
         .curl_multi_setopt_socketdata(
-          multiHandle,
+          multiHandle.multiHandle,
           libcurl_const.CURLMOPT_SOCKETDATA,
           data,
         )
@@ -158,7 +137,7 @@ private[curl] object CurlMultiSocket {
 
       libcurl
         .curl_multi_setopt_timerfunction(
-          multiHandle,
+          multiHandle.multiHandle,
           libcurl_const.CURLMOPT_TIMERFUNCTION,
           onTimeout(_, _, _),
         )
@@ -166,7 +145,7 @@ private[curl] object CurlMultiSocket {
 
       libcurl
         .curl_multi_setopt_socketfunction(
-          multiHandle,
+          multiHandle.multiHandle,
           libcurl_const.CURLMOPT_SOCKETFUNCTION,
           onSocket(_, _, _, _, _),
         )
@@ -181,16 +160,10 @@ private[curl] object CurlMultiSocket {
           // curl callbacks afterwards, and callback cleaning and notifications
           // is deterministic.
           monitors.values.toList.traverse(_.clean) !> IO {
-            val error = new InterruptedException("Runtime shutdown!")
-
             // Remove and notify all easy handles
             // Note that we do this in mapping.evalUpdate in order to block
             // other new usages while cleaning up
-            callbacks.foreach { case (easy, cb) =>
-              libcurl.curl_multi_remove_handle(multiHandle, easy).throwOnError
-              cb(Left(error))
-            }
-            callbacks.clear()
+            multiHandle.clearCallbacks
           }.as(State.Released)
         case State.Released =>
           // It must not happen, but we leave a clue here if it happened!
@@ -199,27 +172,16 @@ private[curl] object CurlMultiSocket {
 
     def setup: Resource[IO, Unit] = Resource.make(init)(_ => cleanup)
 
-    private val callbacks =
-      scala.collection.mutable.Map[Ptr[libcurl.CURL], Either[Throwable, Unit] => Unit]()
-
     override def addHandlerTerminating(
         easy: CurlEasy,
         cb: Either[Throwable, Unit] => Unit,
-    ): IO[Unit] = IO {
-      libcurl.curl_multi_add_handle(multiHandle, easy.curl).throwOnError
-      callbacks(easy.curl) = cb
-    }
+    ): IO[Unit] = IO(multiHandle.addHandle(easy.curl, cb))
 
     override def addHandlerNonTerminating(
         easy: CurlEasy,
         cb: Either[Throwable, Unit] => Unit,
     ): Resource[IO, Unit] =
-      Resource.make(addHandlerTerminating(easy, cb))(_ =>
-        IO {
-          libcurl.curl_multi_remove_handle(multiHandle, easy.curl).throwOnError
-          callbacks.remove(easy.curl).foreach(_(Right(())))
-        }
-      )
+      Resource.make(addHandlerTerminating(easy, cb))(_ => IO(multiHandle.removeHandle(easy.curl)))
 
     def addFD(fd: libcurl.curl_socket_t, read: Boolean, write: Boolean): Unit =
       disp.unsafeRunAndForget {
@@ -275,41 +237,22 @@ private[curl] object CurlMultiSocket {
     def notifyTimeout: IO[Unit] = IO {
       val running = stackalloc[Int]()
       libcurl
-        .curl_multi_socket_action(multiHandle, libcurl_const.CURL_SOCKET_TIMEOUT, 0, running)
+        .curl_multi_socket_action(
+          multiHandle.multiHandle,
+          libcurl_const.CURL_SOCKET_TIMEOUT,
+          0,
+          running,
+        )
         .throwOnError
 
-      postAction
+      multiHandle.onTick
     }
-
-    private def postAction = while ({
-      val msgsInQueue = stackalloc[CInt]()
-      val info = libcurl.curl_multi_info_read(multiHandle, msgsInQueue)
-
-      if (info != null) {
-        val curMsg = libcurl.curl_CURLMsg_msg(info)
-        if (curMsg == libcurl_const.CURLMSG_DONE) {
-          val handle = libcurl.curl_CURLMsg_easy_handle(info)
-          callbacks.remove(handle).foreach { cb =>
-            val result = libcurl.curl_CURLMsg_data_result(info)
-            cb(
-              if (result.isOk) Right(())
-              else Left(CurlError.fromCode(result))
-            )
-          }
-
-          val code = libcurl.curl_multi_remove_handle(multiHandle, handle)
-          if (code.isError)
-            throw CurlError.fromMCode(code)
-        }
-        true
-      } else false
-    }) {}
 
     private def action(fd: libcurl.curl_socket_t, ev: CInt) = IO {
       val running = stackalloc[Int]()
-      libcurl.curl_multi_socket_action(multiHandle, fd, ev, running)
+      libcurl.curl_multi_socket_action(multiHandle.multiHandle, fd, ev, running)
 
-      postAction
+      multiHandle.onTick
 
       Left(())
     }

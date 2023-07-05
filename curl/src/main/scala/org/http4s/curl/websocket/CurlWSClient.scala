@@ -21,7 +21,7 @@ import cats.effect.IO
 import cats.implicits._
 import org.http4s.client.websocket.WSFrame._
 import org.http4s.client.websocket._
-import org.http4s.curl.internal.CurlMulti
+import org.http4s.curl.internal.CurlMultiDriver
 import org.http4s.curl.unsafe.CurlExecutorScheduler
 import org.http4s.curl.unsafe.CurlRuntime
 import org.http4s.curl.unsafe.libcurl_const
@@ -92,7 +92,7 @@ private[curl] object CurlWSClient {
     }
 
   def apply(
-      ms: CurlMulti,
+      ms: CurlMultiDriver,
       recvBufferSize: Int = 100,
       pauseOn: Int = 10,
       resumeOn: Int = 30,

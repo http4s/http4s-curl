@@ -18,7 +18,6 @@ package org.http4s.curl
 
 import cats.effect.IO
 import cats.effect.SyncIO
-import cats.effect.kernel.Resource
 import cats.effect.std.Random
 import cats.effect.unsafe.IORuntime
 import cats.syntax.all._
@@ -27,16 +26,15 @@ import org.http4s.Method._
 import org.http4s.Request
 import org.http4s.Status
 import org.http4s.client.Client
-import org.http4s.curl.unsafe.CurlRuntime
+import org.http4s.curl.unsafe.CurlMultiPerformPoller
 import org.http4s.syntax.all._
 
 class CurlClientSuite extends CatsEffectSuite {
 
-  override lazy val munitIORuntime: IORuntime = CurlRuntime.global
+  override lazy val munitIORuntime: IORuntime =
+    IORuntime.builder().setPollingSystem(CurlMultiPerformPoller()).build()
 
-  val clientFixture: SyncIO[FunFixture[Client[IO]]] = ResourceFunFixture(
-    Resource.eval(http.CurlClient.get)
-  )
+  val clientFixture: SyncIO[FunFixture[Client[IO]]] = ResourceFunFixture(http.CurlClient.default)
 
   clientFixture.test("3 get echos") { client =>
     client

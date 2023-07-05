@@ -141,7 +141,7 @@ private[curl] object CurlRequest {
     resp <- recv.response()
   } yield resp
 
-  def applyMultiSocket(ms: CurlMulti, req: Request[IO]): Resource[IO, Response[IO]] = for {
+  def applyMultiSocket(ms: CurlMultiDriver, req: Request[IO]): Resource[IO, Response[IO]] = for {
     gc <- GCRoot()
     handle <- CurlEasy()
     flow <- FlowControl(handle)

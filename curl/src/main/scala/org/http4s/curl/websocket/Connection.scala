@@ -244,7 +244,7 @@ private object Connection {
 
   def apply(
       req: WSRequest,
-      ms: CurlMulti,
+      ms: CurlMultiDriver,
       recvBufferSize: Int,
       pauseOn: Int,
       resumeOn: Int,

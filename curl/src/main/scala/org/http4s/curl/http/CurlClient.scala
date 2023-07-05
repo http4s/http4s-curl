@@ -18,16 +18,23 @@ package org.http4s.curl.http
 
 import cats.effect._
 import org.http4s.client.Client
-import org.http4s.curl.internal.CurlMulti
+import org.http4s.curl.internal.CurlMultiDriver
 import org.http4s.curl.unsafe.CurlExecutorScheduler
+import org.http4s.curl.unsafe.CurlMultiPerformPoller
+import org.http4s.curl.unsafe.CurlMultiSocket
 
 private[curl] object CurlClient {
   def apply(ec: CurlExecutorScheduler): Client[IO] = Client(CurlRequest(ec, _))
 
-  def multiSocket(ms: CurlMulti): Client[IO] = Client(CurlRequest.applyMultiSocket(ms, _))
+  def multiSocket(ms: CurlMultiDriver): Client[IO] = Client(CurlRequest.applyMultiSocket(ms, _))
 
   def get: IO[Client[IO]] = IO.executionContext.flatMap {
     case ec: CurlExecutorScheduler => IO.pure(apply(ec))
     case _ => IO.raiseError(new RuntimeException("Not running on CurlExecutorScheduler"))
+  }
+
+  val default: Resource[IO, Client[IO]] = IO.pollers.toResource.flatMap {
+    _.collectFirst { case mp: CurlMultiPerformPoller => Resource.eval(IO(multiSocket(mp))) }
+      .getOrElse(CurlMultiSocket().map(multiSocket))
   }
 }
