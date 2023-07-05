@@ -121,3 +121,5 @@ ThisBuild / stopTestServer := {
 }
 
 addCommandAlias("integrate", "startTestServer; test")
+
+addCommandAlias("precommit", "headerCreateAll;scalafmtAll;scalafmtSbt;scalafixAll;+Test/nativeLink")

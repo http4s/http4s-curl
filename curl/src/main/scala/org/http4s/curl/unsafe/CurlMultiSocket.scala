@@ -30,8 +30,10 @@ import org.http4s.curl.internal._
 import scala.concurrent.duration._
 import scala.scalanative.unsafe._
 
+import CurlMultiSocket._
+
 private[curl] object CurlMultiSocket {
-  implicit private class OptFibOps(private val f: Option[FiberIO[?]]) extends AnyVal {
+  implicit class OptFibOps(private val f: Option[FiberIO[?]]) extends AnyVal {
     def cancel: IO[Unit] = f.fold(IO.unit)(_.cancel)
   }
 
@@ -47,7 +49,7 @@ private[curl] object CurlMultiSocket {
     disp <- Dispatcher.sequential[IO]
     mapping <- AtomicCell[IO].of(State.empty).toResource
     timeout <- IO.ref[Option[FiberIO[Unit]]](None).toResource
-    cms = new CurlMultiSocketImpl(multi, fdPoller, mapping, disp, timeout)
+    cms = new CurlMultiSocket(multi, fdPoller, mapping, disp, timeout)
     _ <- cms.setup
   } yield cms
 
@@ -78,7 +80,7 @@ private[curl] object CurlMultiSocket {
       timeoutMs: CLong,
       userdata: Ptr[Byte],
   ): CInt = {
-    val d = Utils.fromPtr[CurlMultiSocketImpl](userdata)
+    val d = Utils.fromPtr[CurlMultiSocket](userdata)
 
     if (timeoutMs == -1) {
       d.removeTimeout
@@ -95,7 +97,7 @@ private[curl] object CurlMultiSocket {
       userdata: Ptr[Byte],
       socketdata: Ptr[Byte],
   ): CInt = {
-    val d = Utils.fromPtr[CurlMultiSocketImpl](userdata)
+    val d = Utils.fromPtr[CurlMultiSocket](userdata)
 
     what match {
       case libcurl_const.CURL_POLL_IN => d.addFD(fd, true, false)
@@ -108,157 +110,158 @@ private[curl] object CurlMultiSocket {
     0
   }
 
-  final private class CurlMultiSocketImpl(
-      multiHandle: CurlMulti,
-      fdpoller: FileDescriptorPoller,
-      mapping: AtomicCell[IO, State],
-      disp: Dispatcher[IO],
-      timeout: Ref[IO, Option[FiberIO[Unit]]],
-  ) extends CurlMultiDriver {
+}
 
-    private def init = IO {
-      val data = Utils.toPtr(this)
+final private class CurlMultiSocket private (
+    multiHandle: CurlMulti,
+    fdpoller: FileDescriptorPoller,
+    mapping: AtomicCell[IO, State],
+    disp: Dispatcher[IO],
+    timeout: Ref[IO, Option[FiberIO[Unit]]],
+) extends CurlMultiDriver {
 
-      libcurl
-        .curl_multi_setopt_timerdata(
-          multiHandle.multiHandle,
-          libcurl_const.CURLMOPT_TIMERDATA,
-          data,
-        )
-        .throwOnError
+  private def init = IO {
+    val data = Utils.toPtr(this)
 
-      libcurl
-        .curl_multi_setopt_socketdata(
-          multiHandle.multiHandle,
-          libcurl_const.CURLMOPT_SOCKETDATA,
-          data,
-        )
-        .throwOnError
-
-      libcurl
-        .curl_multi_setopt_timerfunction(
-          multiHandle.multiHandle,
-          libcurl_const.CURLMOPT_TIMERFUNCTION,
-          onTimeout(_, _, _),
-        )
-        .throwOnError
-
-      libcurl
-        .curl_multi_setopt_socketfunction(
-          multiHandle.multiHandle,
-          libcurl_const.CURLMOPT_SOCKETFUNCTION,
-          onSocket(_, _, _, _, _),
-        )
-        .throwOnError
-
-    } *> notifyTimeout
-
-    private def cleanup =
-      removeTimeoutIO !> mapping.evalUpdate {
-        case State.Active(monitors) =>
-          // First clean all monitors, this ensures that we don't call any
-          // curl callbacks afterwards, and callback cleaning and notifications
-          // is deterministic.
-          monitors.values.toList.traverse(_.clean) !> IO {
-            // Remove and notify all easy handles
-            // Note that we do this in mapping.evalUpdate in order to block
-            // other new usages while cleaning up
-            multiHandle.clearCallbacks
-          }.as(State.Released)
-        case State.Released =>
-          // It must not happen, but we leave a clue here if it happened!
-          IO.raiseError(new IllegalStateException("Cannot clean a released resource!"))
-      }
-
-    def setup: Resource[IO, Unit] = Resource.make(init)(_ => cleanup)
-
-    override def addHandlerTerminating(
-        easy: CurlEasy,
-        cb: Either[Throwable, Unit] => Unit,
-    ): IO[Unit] = IO(multiHandle.addHandle(easy.curl, cb))
-
-    override def addHandlerNonTerminating(
-        easy: CurlEasy,
-        cb: Either[Throwable, Unit] => Unit,
-    ): Resource[IO, Unit] =
-      Resource.make(addHandlerTerminating(easy, cb))(_ => IO(multiHandle.removeHandle(easy.curl)))
-
-    def addFD(fd: libcurl.curl_socket_t, read: Boolean, write: Boolean): Unit =
-      disp.unsafeRunAndForget {
-
-        val newMonitor = fdpoller.registerFileDescriptor(fd, read, write).allocated.flatMap {
-          case (handle, unregister) =>
-            (
-              Option.when(read)(readLoop(fd, handle)).sequence,
-              Option.when(write)(writeLoop(fd, handle)).sequence,
-            )
-              .mapN(Monitoring(_, _, handle, unregister))
-        }
-
-        IO.uncancelable(_ =>
-          mapping.evalUpdate {
-            case state @ State.Active(monitors) =>
-              monitors.get(fd) match {
-                case None =>
-                  newMonitor.map(state.add(fd, _))
-                case Some(s: Monitoring) =>
-                  s.clean *> newMonitor.map(state.add(fd, _))
-              }
-            case State.Released =>
-              IO.raiseError(new IllegalStateException("Runtime is already closed!"))
-          }
-        )
-      }
-
-    def remove(fd: libcurl.curl_socket_t): Unit =
-      disp.unsafeRunAndForget(
-        IO.uncancelable(_ =>
-          mapping.evalUpdate {
-            case state @ State.Active(monitors) =>
-              monitors.get(fd) match {
-                case None => IO(state)
-                case Some(s) => s.clean.as(state.remove(fd))
-              }
-            case State.Released =>
-              IO.raiseError(new IllegalStateException("Runtime is already closed!"))
-          }
-        )
+    libcurl
+      .curl_multi_setopt_timerdata(
+        multiHandle.multiHandle,
+        libcurl_const.CURLMOPT_TIMERDATA,
+        data,
       )
+      .throwOnError
 
-    def setTimeout(duration: Long): Unit = disp.unsafeRunAndForget(
-      (IO.sleep(duration.millis) *> notifyTimeout).start.flatMap(f =>
-        timeout.getAndSet(Some(f)).flatMap(_.cancel)
+    libcurl
+      .curl_multi_setopt_socketdata(
+        multiHandle.multiHandle,
+        libcurl_const.CURLMOPT_SOCKETDATA,
+        data,
+      )
+      .throwOnError
+
+    libcurl
+      .curl_multi_setopt_timerfunction(
+        multiHandle.multiHandle,
+        libcurl_const.CURLMOPT_TIMERFUNCTION,
+        onTimeout(_, _, _),
+      )
+      .throwOnError
+
+    libcurl
+      .curl_multi_setopt_socketfunction(
+        multiHandle.multiHandle,
+        libcurl_const.CURLMOPT_SOCKETFUNCTION,
+        onSocket(_, _, _, _, _),
+      )
+      .throwOnError
+
+  } *> notifyTimeout
+
+  private def cleanup =
+    removeTimeoutIO !> mapping.evalUpdate {
+      case State.Active(monitors) =>
+        // First clean all monitors, this ensures that we don't call any
+        // curl callbacks afterwards, and callback cleaning and notifications
+        // is deterministic.
+        monitors.values.toList.traverse(_.clean) !> IO {
+          // Remove and notify all easy handles
+          // Note that we do this in mapping.evalUpdate in order to block
+          // other new usages while cleaning up
+          multiHandle.clearCallbacks
+        }.as(State.Released)
+      case State.Released =>
+        // It must not happen, but we leave a clue here if it happened!
+        IO.raiseError(new IllegalStateException("Cannot clean a released resource!"))
+    }
+
+  def setup: Resource[IO, Unit] = Resource.make(init)(_ => cleanup)
+
+  override def addHandlerTerminating(
+      easy: CurlEasy,
+      cb: Either[Throwable, Unit] => Unit,
+  ): IO[Unit] = IO(multiHandle.addHandle(easy.curl, cb))
+
+  override def addHandlerNonTerminating(
+      easy: CurlEasy,
+      cb: Either[Throwable, Unit] => Unit,
+  ): Resource[IO, Unit] =
+    Resource.make(addHandlerTerminating(easy, cb))(_ => IO(multiHandle.removeHandle(easy.curl)))
+
+  def addFD(fd: libcurl.curl_socket_t, read: Boolean, write: Boolean): Unit =
+    disp.unsafeRunAndForget {
+
+      val newMonitor = fdpoller.registerFileDescriptor(fd, read, write).allocated.flatMap {
+        case (handle, unregister) =>
+          (
+            Option.when(read)(readLoop(fd, handle)).sequence,
+            Option.when(write)(writeLoop(fd, handle)).sequence,
+          )
+            .mapN(Monitoring(_, _, handle, unregister))
+      }
+
+      IO.uncancelable(_ =>
+        mapping.evalUpdate {
+          case state @ State.Active(monitors) =>
+            monitors.get(fd) match {
+              case None =>
+                newMonitor.map(state.add(fd, _))
+              case Some(s: Monitoring) =>
+                s.clean *> newMonitor.map(state.add(fd, _))
+            }
+          case State.Released =>
+            IO.raiseError(new IllegalStateException("Runtime is already closed!"))
+        }
+      )
+    }
+
+  def remove(fd: libcurl.curl_socket_t): Unit =
+    disp.unsafeRunAndForget(
+      IO.uncancelable(_ =>
+        mapping.evalUpdate {
+          case state @ State.Active(monitors) =>
+            monitors.get(fd) match {
+              case None => IO(state)
+              case Some(s) => s.clean.as(state.remove(fd))
+            }
+          case State.Released =>
+            IO.raiseError(new IllegalStateException("Runtime is already closed!"))
+        }
       )
     )
 
-    private def removeTimeoutIO = timeout.getAndSet(None).flatMap(_.cancel)
-    def removeTimeout: Unit = disp.unsafeRunAndForget(removeTimeoutIO)
+  def setTimeout(duration: Long): Unit = disp.unsafeRunAndForget(
+    (IO.sleep(duration.millis) *> notifyTimeout).start.flatMap(f =>
+      timeout.getAndSet(Some(f)).flatMap(_.cancel)
+    )
+  )
 
-    def notifyTimeout: IO[Unit] = IO {
-      val running = stackalloc[Int]()
-      libcurl
-        .curl_multi_socket_action(
-          multiHandle.multiHandle,
-          libcurl_const.CURL_SOCKET_TIMEOUT,
-          0,
-          running,
-        )
-        .throwOnError
+  private def removeTimeoutIO = timeout.getAndSet(None).flatMap(_.cancel)
+  def removeTimeout: Unit = disp.unsafeRunAndForget(removeTimeoutIO)
 
-      multiHandle.onTick
-    }
+  def notifyTimeout: IO[Unit] = IO {
+    val running = stackalloc[Int]()
+    libcurl
+      .curl_multi_socket_action(
+        multiHandle.multiHandle,
+        libcurl_const.CURL_SOCKET_TIMEOUT,
+        0,
+        running,
+      )
+      .throwOnError
 
-    private def action(fd: libcurl.curl_socket_t, ev: CInt) = IO {
-      val running = stackalloc[Int]()
-      libcurl.curl_multi_socket_action(multiHandle.multiHandle, fd, ev, running)
-
-      multiHandle.onTick
-
-      Left(())
-    }
-    private def readLoop(fd: libcurl.curl_socket_t, p: FileDescriptorPollHandle) =
-      p.pollReadRec(())(_ => action(fd, libcurl_const.CURL_CSELECT_IN)).start
-    private def writeLoop(fd: libcurl.curl_socket_t, p: FileDescriptorPollHandle) =
-      p.pollWriteRec(())(_ => action(fd, libcurl_const.CURL_CSELECT_OUT)).start
+    multiHandle.onTick
   }
+
+  private def action(fd: libcurl.curl_socket_t, ev: CInt) = IO {
+    val running = stackalloc[Int]()
+    libcurl.curl_multi_socket_action(multiHandle.multiHandle, fd, ev, running)
+
+    multiHandle.onTick
+
+    Left(())
+  }
+  private def readLoop(fd: libcurl.curl_socket_t, p: FileDescriptorPollHandle) =
+    p.pollReadRec(())(_ => action(fd, libcurl_const.CURL_CSELECT_IN)).start
+  private def writeLoop(fd: libcurl.curl_socket_t, p: FileDescriptorPollHandle) =
+    p.pollWriteRec(())(_ => action(fd, libcurl_const.CURL_CSELECT_OUT)).start
 }
