@@ -62,36 +62,32 @@ final private[curl] class CurlMultiPerformPoller(
     val timeoutIsInf = nanos == -1
     val noCallbacks = multiHandle.noCallbacks
 
-    if (timeoutIsInf && noCallbacks) false
-    else {
-      val timeoutMillis =
-        if (timeoutIsInf) Int.MaxValue else (nanos / 1e6).toInt
+    val timeoutMillis =
+      if (timeoutIsInf) Int.MaxValue else (nanos / 1e6).toInt
 
-      if (nanos > 0) {
+    if (nanos > 0) {
 
-        libcurl
-          .curl_multi_poll(
-            multiHandle.multiHandle,
-            null,
-            0.toUInt,
-            timeoutMillis,
-            null,
-          )
-          .throwOnError
-      }
-
-      if (noCallbacks) false
-      else {
-        val runningHandles = stackalloc[CInt]()
-        libcurl.curl_multi_perform(multiHandle.multiHandle, runningHandles).throwOnError
-
-        multiHandle.onTick
-
-        needsPoll = !runningHandles > 0
-        true
-      }
+      libcurl
+        .curl_multi_poll(
+          multiHandle.multiHandle,
+          null,
+          0.toUInt,
+          timeoutMillis,
+          null,
+        )
+        .throwOnError
     }
 
+    if (noCallbacks) false
+    else {
+      val runningHandles = stackalloc[CInt]()
+      libcurl.curl_multi_perform(multiHandle.multiHandle, runningHandles).throwOnError
+
+      multiHandle.onTick
+
+      needsPoll = !runningHandles > 0
+      true
+    }
   }
 
   override def needsPoll(poller: Poller): Boolean = needsPoll
