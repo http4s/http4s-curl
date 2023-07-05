@@ -20,19 +20,11 @@ import cats.effect._
 import org.http4s.client.Client
 import org.http4s.curl.CurlDriver
 import org.http4s.curl.internal.CurlMultiDriver
-import org.http4s.curl.unsafe.CurlExecutorScheduler
 
 private[curl] object CurlClient {
-  def apply(ec: CurlExecutorScheduler): Client[IO] = Client(CurlRequest(ec, _))
-
-  def multiSocket(ms: CurlMultiDriver, isVerbose: Boolean = false): Client[IO] = Client(
-    CurlRequest.applyMultiSocket(ms, _, isVerbose)
+  def apply(ms: CurlMultiDriver, isVerbose: Boolean = false): Client[IO] = Client(
+    CurlRequest(ms, _, isVerbose)
   )
-
-  def get: IO[Client[IO]] = IO.executionContext.flatMap {
-    case ec: CurlExecutorScheduler => IO.pure(apply(ec))
-    case _ => IO.raiseError(new RuntimeException("Not running on CurlExecutorScheduler"))
-  }
 
   val default: Resource[IO, Client[IO]] = CurlDriver.default.map(_.http.build)
 }

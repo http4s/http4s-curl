@@ -32,5 +32,5 @@ final class CurlClientBuilder private[curl] (
   def setVerbose: CurlClientBuilder = copy(isVerbose = true)
   def notVerbose: CurlClientBuilder = copy(isVerbose = false)
 
-  def build: Client[IO] = CurlClient.multiSocket(driver, isVerbose = isVerbose)
+  def build: Client[IO] = CurlClient(driver, isVerbose = isVerbose)
 }

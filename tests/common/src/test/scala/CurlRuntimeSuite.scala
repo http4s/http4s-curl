@@ -17,7 +17,7 @@
 package org.http4s.curl
 
 import munit.FunSuite
-import org.http4s.curl.unsafe.CurlRuntime
+import org.http4s.curl.CurlRuntime
 
 class CurlRuntimeSuite extends FunSuite {
 

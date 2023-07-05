@@ -17,23 +17,20 @@
 package org.http4s.curl
 
 import cats.effect.IO
-import cats.effect.kernel.Resource
 import cats.effect.unsafe.IORuntime
 import cats.syntax.all._
 import munit.CatsEffectSuite
 import org.http4s.client.websocket.WSFrame
 import org.http4s.client.websocket.WSRequest
-import org.http4s.curl.unsafe.CurlRuntime
-import org.http4s.curl.websocket.CurlWSClient
+import org.http4s.curl.unsafe.CurlMultiPerformPoller
 import org.http4s.implicits._
 
 class CurlWSClientSuite extends CatsEffectSuite {
 
-  override lazy val munitIORuntime: IORuntime = CurlRuntime.global
+  override lazy val munitIORuntime: IORuntime =
+    IORuntime.builder().setPollingSystem(CurlMultiPerformPoller()).build()
 
-  private val clientFixture = ResourceFunFixture(
-    Resource.eval(CurlWSClient.get(verbose = true))
-  )
+  private val clientFixture = ResourceFunFixture(websocket.CurlWSClient.default)
 
   clientFixture.test("websocket echo") {
     val frames = List.range(1, 5).map(i => WSFrame.Text(s"text $i"))

@@ -31,7 +31,7 @@ import org.http4s.syntax.all._
 class CurlClientMultiSocketSuite extends CatsEffectSuite {
 
   val clientFixture: SyncIO[FunFixture[Client[IO]]] = ResourceFunFixture(
-    CurlMultiSocket().map(http.CurlClient.multiSocket(_))
+    CurlMultiSocket().map(http.CurlClient(_))
   )
 
   clientFixture.test("3 get echos") { client =>

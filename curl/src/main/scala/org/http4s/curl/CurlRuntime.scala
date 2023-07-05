@@ -15,50 +15,13 @@
  */
 
 package org.http4s.curl
-package unsafe
-
-import cats.effect.unsafe.IORuntime
-import cats.effect.unsafe.IORuntimeConfig
-import cats.effect.unsafe.Scheduler
 
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.ExecutionContext
 import scala.scalanative.unsafe._
 
+import unsafe.libcurl
+
 object CurlRuntime {
-
-  def apply(): IORuntime = apply(IORuntimeConfig())
-
-  def apply(config: IORuntimeConfig): IORuntime = {
-    val (ecScheduler, shutdown) = defaultExecutionContextScheduler()
-    IORuntime(ecScheduler, ecScheduler, ecScheduler, shutdown, config)
-  }
-
-  def defaultExecutionContextScheduler(): (ExecutionContext with Scheduler, () => Unit) = {
-    val (ecScheduler, shutdown) = CurlExecutorScheduler(64)
-    (ecScheduler, shutdown)
-  }
-
-  private[this] var _global: IORuntime = null
-
-  private[curl] def installGlobal(global: => IORuntime): Boolean =
-    if (_global == null) {
-      _global = global
-      true
-    } else {
-      false
-    }
-
-  lazy val global: IORuntime = {
-    if (_global == null) {
-      installGlobal {
-        CurlRuntime()
-      }
-    }
-
-    _global
-  }
-
   def curlVersion: String = fromCString(libcurl.curl_version())
 
   private lazy val versionData = libcurl.curl_version_info(libcurl.CURLVERSION_NOW())
