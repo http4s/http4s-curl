@@ -16,16 +16,21 @@
 
 package org.http4s.curl
 
-import cats.effect.IOApp
-import cats.effect.unsafe.PollingSystem
-import org.http4s.curl.unsafe.CurlMultiPerformPoller
+import cats.effect.IO
+import org.http4s.client.Client
+import org.http4s.curl.http.CurlClient
+import org.http4s.curl.internal.CurlMultiDriver
 
-trait CurlApp extends IOApp {
-  private val multiPerform = CurlMultiPerformPoller()
+final class CurlClientBuilder private[curl] (
+    driver: CurlMultiDriver,
+    val isVerbose: Boolean = false,
+) {
+  private def copy(
+      isVerbose: Boolean
+  ) = new CurlClientBuilder(driver, isVerbose = isVerbose)
 
-  override protected def pollingSystem: PollingSystem = multiPerform
-}
+  def setVerbose: CurlClientBuilder = copy(isVerbose = true)
+  def notVerbose: CurlClientBuilder = copy(isVerbose = false)
 
-object CurlApp {
-  trait Simple extends IOApp.Simple with CurlApp
+  def build: Client[IO] = CurlClient.multiSocket(driver, isVerbose = isVerbose)
 }

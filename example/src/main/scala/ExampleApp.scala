@@ -21,6 +21,7 @@ import cats.syntax.all._
 import io.circe._
 import org.http4s.circe.CirceEntityCodec._
 import org.http4s.curl.CurlApp
+import org.http4s.curl.CurlDriver
 
 object ExampleApp extends CurlApp.Simple {
 
@@ -29,9 +30,13 @@ object ExampleApp extends CurlApp.Simple {
     implicit val decoder: Decoder[Joke] = Decoder.forProduct1("joke")(Joke(_))
   }
 
-  def run: IO[Unit] = for {
-    responses <- curlClient.expect[Joke]("https://icanhazdadjoke.com/").parReplicateA(3)
-    _ <- responses.traverse_(r => IO.println(r.joke))
-  } yield ()
+  def run: IO[Unit] = CurlDriver.default
+    .map(_.http.build)
+    .use(client =>
+      for {
+        responses <- client.expect[Joke]("https://icanhazdadjoke.com/").parReplicateA(3)
+        _ <- responses.traverse_(r => IO.println(r.joke))
+      } yield ()
+    )
 
 }
