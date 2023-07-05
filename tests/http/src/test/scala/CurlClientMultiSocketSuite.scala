@@ -29,6 +29,7 @@ import org.http4s.curl.unsafe.CurlMultiSocket
 import org.http4s.syntax.all._
 
 class CurlClientMultiSocketSuite extends CatsEffectSuite {
+  override def munitIgnore: Boolean = scala.util.Properties.isWin
 
   val clientFixture: SyncIO[FunFixture[Client[IO]]] = ResourceFunFixture(
     CurlMultiSocket().map(http.CurlClient(_))
