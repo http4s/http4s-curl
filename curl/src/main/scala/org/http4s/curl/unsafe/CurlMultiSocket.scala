@@ -170,7 +170,7 @@ final private class CurlMultiSocket private (
           multiHandle.clearCallbacks
         }.as(State.Released)
       case State.Released =>
-        // It must not happen, but we leave a clue here if it happened!
+        // It can not happen, but we leave a clue here if it happened!
         IO.raiseError(new IllegalStateException("Cannot clean a released resource!"))
     }
 
@@ -223,8 +223,7 @@ final private class CurlMultiSocket private (
               case None => IO(state)
               case Some(s) => s.clean.as(state.remove(fd))
             }
-          case State.Released =>
-            IO.raiseError(new IllegalStateException("Runtime is already closed!"))
+          case State.Released => IO(State.Released) // It's already removed!
         }
       )
     )
