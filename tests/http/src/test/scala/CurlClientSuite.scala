@@ -66,20 +66,21 @@ class CurlClientSuite extends CatsEffectSuite {
     client.expect[String]("").intercept[CurlError]
   }
 
-  clientFixture.test("3 post echos") { client =>
+  clientFixture.test("post echos") { client =>
     Random.scalaUtilRandom[IO].flatMap { random =>
       random
         .nextString(8)
         .flatMap { s =>
-          val msg = s"hello postman $s"
+          val msg = s"hello $s"
           client
             .expect[String](
               Request[IO](POST, uri = uri"http://localhost:8080/http/echo").withEntity(msg)
             )
-            .map(_.contains(msg))
-            .assert
+            .assertEquals(msg)
+            .attempt
         }
-        .parReplicateA_(3)
+        .parReplicateA(50)
+        .assertEquals(List.fill(50)(Right(())))
     }
   }
 
