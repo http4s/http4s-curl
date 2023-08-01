@@ -1,6 +1,6 @@
 import Versions._
 
-ThisBuild / tlBaseVersion := "0.2"
+ThisBuild / tlBaseVersion := "0.3"
 
 ThisBuild / developers := List(
   tlGitHubDev("armanbilge", "Arman Bilge")
@@ -121,3 +121,5 @@ ThisBuild / stopTestServer := {
 }
 
 addCommandAlias("integrate", "startTestServer; test")
+
+addCommandAlias("precommit", "headerCreateAll;scalafmtAll;scalafmtSbt;scalafixAll;+Test/nativeLink")

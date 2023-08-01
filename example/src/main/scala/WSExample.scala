@@ -20,6 +20,7 @@ import org.http4s.Uri
 import org.http4s.client.websocket.WSFrame
 import org.http4s.client.websocket.WSRequest
 import org.http4s.curl.CurlApp
+import org.http4s.curl.CurlDriver
 import org.http4s.implicits._
 
 import scala.concurrent.duration._
@@ -31,8 +32,9 @@ object WSExample extends CurlApp.Simple {
   private val local = uri"ws://localhost:8080/ws/large"
   private val websocket = local
 
-  def run: IO[Unit] = websocketOrError(verbose = true)
-    .connectHighLevel(WSRequest(websocket))
+  def run: IO[Unit] = CurlDriver.default
+    .evalMap(_.websocket.setVerbose.buildIO)
+    .flatMap(_.connectHighLevel(WSRequest(websocket)))
     .use { client =>
       IO.println("ready!") >>
         client.receiveStream.foreach(_ => IO.println("> frame").delayBy(50.millis)).compile.drain
@@ -45,8 +47,9 @@ object WSEchoExample extends CurlApp.Simple {
   // private val echo = uri"wss://ws.postman-echo.com/raw"
   private val echo = uri"ws://localhost:8080/ws/echo"
 
-  def run: IO[Unit] = websocketOrError()
-    .connectHighLevel(WSRequest(echo))
+  def run: IO[Unit] = CurlDriver.default
+    .evalMap(_.websocket.buildIO)
+    .flatMap(_.connectHighLevel(WSRequest(echo)))
     .use { client =>
       val send: IO[Unit] =
         IO.println("sending ...") >> client.send(WSFrame.Text("hello")).parReplicateA_(4)

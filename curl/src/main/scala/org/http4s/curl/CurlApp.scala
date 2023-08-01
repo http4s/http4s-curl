@@ -16,59 +16,14 @@
 
 package org.http4s.curl
 
-import cats.effect.IO
 import cats.effect.IOApp
-import cats.effect.unsafe.IORuntime
-import org.http4s.client.Client
-import org.http4s.client.websocket.WSClient
-import org.http4s.curl.unsafe.CurlExecutorScheduler
-import org.http4s.curl.unsafe.CurlRuntime
-import org.http4s.curl.websocket.CurlWSClient
+import cats.effect.unsafe.PollingSystem
+import org.http4s.curl.unsafe.CurlMultiPerformPoller
 
 trait CurlApp extends IOApp {
+  private val multiPerform = CurlMultiPerformPoller()
 
-  final override lazy val runtime: IORuntime = {
-    val installed = CurlRuntime.installGlobal {
-      CurlRuntime(runtimeConfig)
-    }
-
-    if (!installed) {
-      System.err
-        .println(
-          "WARNING: CurlRuntime global runtime already initialized; custom configurations will be ignored"
-        )
-    }
-
-    CurlRuntime.global
-  }
-
-  private def scheduler = runtime.compute.asInstanceOf[CurlExecutorScheduler]
-  final lazy val curlClient: Client[IO] = http.CurlClient(scheduler)
-
-  /** gets websocket client if current libcurl environment supports it */
-  final def websocket(
-      recvBufferSize: Int = 100,
-      verbose: Boolean = false,
-  ): Option[WSClient[IO]] =
-    CurlWSClient(
-      scheduler,
-      recvBufferSize,
-      pauseOn = recvBufferSize / 10,
-      resumeOn = (recvBufferSize * 0.3).floor.toInt,
-      verbose = verbose,
-    )
-
-  /** gets websocket client if current libcurl environment supports it throws an error otherwise */
-  final def websocketOrError(recvBufferSize: Int = 100, verbose: Boolean = false): WSClient[IO] =
-    websocket(recvBufferSize, verbose).getOrElse(
-      throw new RuntimeException(
-        """Websocket is not supported in this environment!
-You need to have curl with version 7.87.0 or higher with websockets enabled.
-Note that websocket support in curl is experimental and is not available by default,
-so you need to either build it with websocket support or use an already built libcurl with websocket support."""
-      )
-    )
-
+  override protected def pollingSystem: PollingSystem = multiPerform
 }
 
 object CurlApp {

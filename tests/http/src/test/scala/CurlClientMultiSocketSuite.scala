@@ -19,22 +19,21 @@ package org.http4s.curl
 import cats.effect.IO
 import cats.effect.SyncIO
 import cats.effect.std.Random
-import cats.effect.unsafe.IORuntime
 import cats.syntax.all._
 import munit.CatsEffectSuite
 import org.http4s.Method._
 import org.http4s.Request
 import org.http4s.Status
 import org.http4s.client.Client
-import org.http4s.curl.unsafe.CurlMultiPerformPoller
+import org.http4s.curl.unsafe.CurlMultiSocket
 import org.http4s.syntax.all._
 
-class CurlClientSuite extends CatsEffectSuite {
+class CurlClientMultiSocketSuite extends CatsEffectSuite {
+  override def munitIgnore: Boolean = scala.util.Properties.isWin
 
-  override lazy val munitIORuntime: IORuntime =
-    IORuntime.builder().setPollingSystem(CurlMultiPerformPoller()).build()
-
-  val clientFixture: SyncIO[FunFixture[Client[IO]]] = ResourceFunFixture(http.CurlClient.default)
+  val clientFixture: SyncIO[FunFixture[Client[IO]]] = ResourceFunFixture(
+    CurlMultiSocket().map(http.CurlClient(_))
+  )
 
   clientFixture.test("3 get echos") { client =>
     client

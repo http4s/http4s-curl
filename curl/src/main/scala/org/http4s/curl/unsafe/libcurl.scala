@@ -27,6 +27,9 @@ private[curl] object libcurl_const {
   final val CURLOPTTYPE_LONG = 0
   final val CURLOPTTYPE_OBJECTPOINT = 10000
   final val CURLOPTTYPE_FUNCTIONPOINT = 20000
+  final val CURLOPTTYPE_OFF_T = 30000
+  final val CURLOPTTYPE_BLOB = 40000
+
   final val CURLOPTTYPE_STRINGPOINT = CURLOPTTYPE_OBJECTPOINT
   final val CURLOPTTYPE_SLISTPOINT = CURLOPTTYPE_OBJECTPOINT
   final val CURLOPT_CUSTOMREQUEST = CURLOPTTYPE_OBJECTPOINT + 36
@@ -43,6 +46,56 @@ private[curl] object libcurl_const {
   final val CURLOPT_VERBOSE = CURLOPTTYPE_LONG + 41
   final val CURLOPT_UPLOAD = CURLOPTTYPE_LONG + 46
   final val CURLOPT_WS_OPTIONS = CURLOPTTYPE_LONG + 320
+
+  /* This is the socket callback function pointer */
+  final val CURLMOPT_SOCKETFUNCTION = CURLOPTTYPE_FUNCTIONPOINT + 1
+
+  /* This is the argument passed to the socket callback */
+  final val CURLMOPT_SOCKETDATA = CURLOPTTYPE_OBJECTPOINT + 2
+
+  /* set to 1 to enable pipelining for this multi handle */
+  final val CURLMOPT_PIPELINING = CURLOPTTYPE_LONG + 3
+
+  /* This is the timer callback function pointer */
+  final val CURLMOPT_TIMERFUNCTION = CURLOPTTYPE_FUNCTIONPOINT + 4
+
+  /* This is the argument passed to the timer callback */
+  final val CURLMOPT_TIMERDATA = CURLOPTTYPE_OBJECTPOINT + 5
+
+  /* maximum number of entries in the connection cache */
+  final val CURLMOPT_MAXCONNECTS = CURLOPTTYPE_LONG + 6
+
+  /* maximum number of (pipelining) connections to one host */
+  final val CURLMOPT_MAX_HOST_CONNECTIONS = CURLOPTTYPE_LONG + 7
+
+  /* maximum number of requests in a pipeline */
+  final val CURLMOPT_MAX_PIPELINE_LENGTH = CURLOPTTYPE_LONG + 8
+
+  /* a connection with a content-length longer than this
+     will not be considered for pipelining */
+  final val CURLMOPT_CONTENT_LENGTH_PENALTY_SIZE = CURLOPTTYPE_OFF_T + 9
+
+  /* a connection with a chunk length longer than this
+     will not be considered for pipelining */
+  final val CURLMOPT_CHUNK_LENGTH_PENALTY_SIZE = CURLOPTTYPE_OFF_T + 10
+
+  /* a list of site names(+port) that are blocked from pipelining */
+  final val CURLMOPT_PIPELINING_SITE_BL = CURLOPTTYPE_OBJECTPOINT + 11
+
+  /* a list of server types that are blocked from pipelining */
+  final val CURLMOPT_PIPELINING_SERVER_BL = CURLOPTTYPE_OBJECTPOINT + 12
+
+  /* maximum number of open connections in total */
+  final val CURLMOPT_MAX_TOTAL_CONNECTIONS = CURLOPTTYPE_LONG + 13
+
+  /* This is the server push callback function pointer */
+  final val CURLMOPT_PUSHFUNCTION = CURLOPTTYPE_FUNCTIONPOINT + 14
+
+  /* This is the argument passed to the server push callback */
+  final val CURLMOPT_PUSHDATA = CURLOPTTYPE_OBJECTPOINT + 15
+
+  /* maximum number of concurrent streams to support on a connection */
+  final val CURLMOPT_MAX_CONCURRENT_STREAMS = CURLOPTTYPE_LONG + 16
 
   final val CURL_HTTP_VERSION_NONE = 0L
   final val CURL_HTTP_VERSION_1_0 = 1L
@@ -74,15 +127,19 @@ private[curl] object libcurl_const {
 
   // websocket options flags
   final val CURLWS_RAW_MODE = 1 << 0
-}
 
-final private[curl] case class CURLcode(value: CInt) extends AnyVal {
-  @inline def isOk: Boolean = value == 0
-  @inline def isError: Boolean = value != 0
-}
-final private[curl] case class CURLMcode(value: CInt) extends AnyVal {
-  @inline def isOk: Boolean = value == 0
-  @inline def isError: Boolean = value != 0
+  final val CURL_SOCKET_BAD = -1
+  final val CURL_SOCKET_TIMEOUT = CURL_SOCKET_BAD
+
+  final val CURL_CSELECT_IN = 0x01
+  final val CURL_CSELECT_OUT = 0x02
+  final val CURL_CSELECT_ERR = 0x04
+
+  final val CURL_POLL_NONE = 0
+  final val CURL_POLL_IN = 1
+  final val CURL_POLL_OUT = 2
+  final val CURL_POLL_INOUT = 3
+  final val CURL_POLL_REMOVE = 4
 }
 
 @link("curl")
@@ -102,6 +159,8 @@ private[curl] object libcurl {
 
   type CURLversion = CUnsignedInt
 
+  type curl_socket_t = CInt
+
   type curl_slist
 
   type curl_version_info_data
@@ -111,6 +170,10 @@ private[curl] object libcurl {
   type write_callback = CFuncPtr4[Ptr[CChar], CSize, CSize, Ptr[Byte], CSize]
 
   type read_callback = CFuncPtr4[Ptr[CChar], CSize, CSize, Ptr[Byte], CSize]
+
+  type socket_callback = CFuncPtr5[Ptr[CURL], curl_socket_t, CInt, Ptr[Byte], Ptr[Byte], CInt]
+
+  type timer_callback = CFuncPtr3[Ptr[CURLM], CLong, Ptr[Byte], CInt]
 
   type curl_ws_frame = CStruct4[CInt, CInt, Long, Long] // age, flags, offset, bytesleft
 
@@ -272,6 +335,47 @@ private[curl] object libcurl {
 
   @name("curl_multi_strerror")
   def curl_multi_strerror(code: CURLMcode): Ptr[CChar] = extern
+
+  @name("curl_multi_setopt")
+  def curl_multi_setopt_socketfunction(
+      curl: Ptr[CURLM],
+      option: CURLMOPT_SOCKETFUNCTION.type,
+      callback: socket_callback,
+  ): CURLMcode =
+    extern
+
+  @name("curl_multi_setopt")
+  def curl_multi_setopt_socketdata(
+      curl: Ptr[CURLM],
+      option: CURLMOPT_SOCKETDATA.type,
+      pointer: Ptr[Byte],
+  ): CURLMcode =
+    extern
+
+  @name("curl_multi_setopt")
+  def curl_multi_setopt_timerfunction(
+      curl: Ptr[CURLM],
+      option: CURLMOPT_TIMERFUNCTION.type,
+      callback: timer_callback,
+  ): CURLMcode =
+    extern
+
+  @name("curl_multi_setopt")
+  def curl_multi_setopt_timerdata(
+      curl: Ptr[CURLM],
+      option: CURLMOPT_TIMERDATA.type,
+      pointer: Ptr[Byte],
+  ): CURLMcode =
+    extern
+
+  @name("curl_multi_socket_action")
+  def curl_multi_socket_action(
+      curl: Ptr[CURLM],
+      socket: curl_socket_t,
+      evBitmask: CInt,
+      runningHandles: Ptr[Int],
+  ): CURLMcode =
+    extern
 
   @name("curl_easy_setopt")
   def curl_easy_setopt_websocket(

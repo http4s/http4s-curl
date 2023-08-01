@@ -21,21 +21,19 @@ import org.http4s.Request
 import org.http4s.Response
 import org.http4s.curl.internal.Utils
 import org.http4s.curl.internal._
-import org.http4s.curl.unsafe.CurlExecutorScheduler
 
 private[curl] object CurlRequest {
   private def setup(
       handle: CurlEasy,
-      ec: CurlExecutorScheduler,
       send: RequestSend,
       recv: RequestRecv,
       req: Request[IO],
+      verbose: Boolean,
   ): Resource[IO, Unit] =
     Utils.newZone.flatMap(implicit zone =>
       CurlSList().evalMap(headers =>
         IO {
-          // TODO add in options
-          // handle.setVerbose(true)
+          if (verbose) handle.setVerbose(true)
 
           import org.http4s.curl.unsafe.libcurl_const
           import scala.scalanative.unsafe._
@@ -72,20 +70,23 @@ private[curl] object CurlRequest {
 
           handle.setWriteData(Utils.toPtr(recv))
           handle.setWriteFunction(RequestRecv.writeCallback(_, _, _, _))
-
-          ec.addHandle(handle.curl, recv.onTerminated)
         }
       )
     )
 
-  def apply(ec: CurlExecutorScheduler, req: Request[IO]): Resource[IO, Response[IO]] = for {
+  def apply(
+      ms: CurlMultiDriver,
+      req: Request[IO],
+      isVerbose: Boolean = false,
+  ): Resource[IO, Response[IO]] = for {
     gc <- GCRoot()
     handle <- CurlEasy()
     flow <- FlowControl(handle)
     send <- RequestSend(flow)
     recv <- RequestRecv(flow)
     _ <- gc.add(send, recv)
-    _ <- setup(handle, ec, send, recv, req)
+    _ <- setup(handle, send, recv, req, isVerbose)
+    _ <- ms.addHandlerTerminating(handle, recv.onTerminated).toResource
     _ <- req.body.through(send.pipe).compile.drain.background
     resp <- recv.response()
   } yield resp

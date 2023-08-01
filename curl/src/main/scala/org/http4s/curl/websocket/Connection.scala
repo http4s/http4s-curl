@@ -28,7 +28,6 @@ import org.http4s.Uri
 import org.http4s.client.websocket._
 import org.http4s.curl.internal.Utils
 import org.http4s.curl.internal._
-import org.http4s.curl.unsafe.CurlExecutorScheduler
 import org.http4s.curl.unsafe.libcurl
 import org.http4s.curl.unsafe.libcurl_const
 import scodec.bits.ByteVector
@@ -208,7 +207,7 @@ private object Connection {
 
   def apply(
       req: WSRequest,
-      ec: CurlExecutorScheduler,
+      ms: CurlMultiDriver,
       recvBufferSize: Int,
       pauseOn: Int,
       resumeOn: Int,
@@ -237,7 +236,7 @@ private object Connection {
     )
     _ <- setup(req, verbose)(con)
     _ <- gc.add(con)
-    _ <- ec.addHandleR(handler.curl, con.onTerminated)
+    _ <- ms.addHandlerNonTerminating(handler, con.onTerminated)
     // Wait until established or throw error
     _ <- estab.get.flatMap(IO.fromEither).toResource
   } yield con

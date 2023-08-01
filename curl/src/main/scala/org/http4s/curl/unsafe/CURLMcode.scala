@@ -14,17 +14,17 @@
  * limitations under the License.
  */
 
-package org.http4s.curl.http
+package org.http4s.curl.unsafe
 
-import cats.effect._
-import org.http4s.client.Client
-import org.http4s.curl.CurlDriver
-import org.http4s.curl.internal.CurlMultiDriver
+import org.http4s.curl.CurlError
 
-private[curl] object CurlClient {
-  def apply(ms: CurlMultiDriver, isVerbose: Boolean = false): Client[IO] = Client(
-    CurlRequest(ms, _, isVerbose)
-  )
+import scala.scalanative.unsafe._
 
-  val default: Resource[IO, Client[IO]] = CurlDriver.default.map(_.http.build)
+final private[curl] case class CURLMcode(value: CInt) extends AnyVal {
+  @inline def isOk: Boolean = value == 0
+  @inline def isError: Boolean = value != 0
+  @inline def throwOnError: Unit =
+    if (isError) {
+      throw CurlError.fromMCode(this)
+    }
 }

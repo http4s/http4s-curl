@@ -14,17 +14,23 @@
  * limitations under the License.
  */
 
-package org.http4s.curl.http
+package org.http4s.curl
 
-import cats.effect._
+import cats.effect.IO
 import org.http4s.client.Client
-import org.http4s.curl.CurlDriver
+import org.http4s.curl.http.CurlClient
 import org.http4s.curl.internal.CurlMultiDriver
 
-private[curl] object CurlClient {
-  def apply(ms: CurlMultiDriver, isVerbose: Boolean = false): Client[IO] = Client(
-    CurlRequest(ms, _, isVerbose)
-  )
+final class CurlClientBuilder private[curl] (
+    driver: CurlMultiDriver,
+    val isVerbose: Boolean = false,
+) {
+  private def copy(
+      isVerbose: Boolean
+  ) = new CurlClientBuilder(driver, isVerbose = isVerbose)
 
-  val default: Resource[IO, Client[IO]] = CurlDriver.default.map(_.http.build)
+  def setVerbose: CurlClientBuilder = copy(isVerbose = true)
+  def notVerbose: CurlClientBuilder = copy(isVerbose = false)
+
+  def build: Client[IO] = CurlClient(driver, isVerbose = isVerbose)
 }

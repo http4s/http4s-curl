@@ -14,17 +14,22 @@
  * limitations under the License.
  */
 
-package org.http4s.curl.http
+package org.http4s.curl
 
-import cats.effect._
-import org.http4s.client.Client
-import org.http4s.curl.CurlDriver
+import cats.effect.IO
+import cats.effect.kernel.Resource
 import org.http4s.curl.internal.CurlMultiDriver
+import org.http4s.curl.unsafe.CurlMultiPerformPoller
+import org.http4s.curl.unsafe.CurlMultiSocket
 
-private[curl] object CurlClient {
-  def apply(ms: CurlMultiDriver, isVerbose: Boolean = false): Client[IO] = Client(
-    CurlRequest(ms, _, isVerbose)
-  )
+final class CurlDriver private (driver: CurlMultiDriver) {
+  def http: CurlClientBuilder = new CurlClientBuilder(driver)
+  def websocket: CurlWSClientBuilder = new CurlWSClientBuilder(driver)
+}
 
-  val default: Resource[IO, Client[IO]] = CurlDriver.default.map(_.http.build)
+object CurlDriver {
+  val default: Resource[IO, CurlDriver] = IO.pollers.toResource.flatMap {
+    _.collectFirst { case mp: CurlMultiPerformPoller => Resource.eval(IO(new CurlDriver(mp))) }
+      .getOrElse(CurlMultiSocket().map(new CurlDriver(_)))
+  }
 }
