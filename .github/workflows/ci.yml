@@ -257,12 +257,12 @@ jobs:
           tar xf targets.tar
           rm targets.tar
 
-      - name: Download target directories (2.13.12, rootNative)
+      - name: Download target directories (2.13.13, rootNative)
         uses: actions/download-artifact@v3
         with:
-          name: target-${{ matrix.os }}-${{ matrix.java }}-2.13.12-rootNative
+          name: target-${{ matrix.os }}-${{ matrix.java }}-2.13.13-rootNative
 
-      - name: Inflate target directories (2.13.12, rootNative)
+      - name: Inflate target directories (2.13.13, rootNative)
         run: |
           tar xf targets.tar
           rm targets.tar
