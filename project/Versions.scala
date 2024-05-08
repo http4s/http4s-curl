@@ -3,5 +3,5 @@ object Versions {
   val scala213 = "2.13.12"
   val http4sVersion = "0.23.27"
   val catsEffectVersion = "3.5.4"
-  val munitCEVersion = "2.0.0-M4"
+  val munitCEVersion = "2.0.0-RC1"
 }
