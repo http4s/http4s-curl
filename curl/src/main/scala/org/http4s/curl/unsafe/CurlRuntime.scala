@@ -79,7 +79,7 @@ object CurlRuntime {
 
     val all: ListBuffer[String] = ListBuffer.empty
     var cur: Ptr[CString] = libcurl.curl_protocols_info(versionData)
-    while ((!cur).toLong != 0) {
+    while (!cur.toLong != 0) {
       all.addOne(fromCString(!cur).toLowerCase)
       cur = cur + 1
     }
