@@ -116,8 +116,7 @@ ThisBuild / startTestServer := {
   TestServer.start()
 }
 
-ThisBuild / stopTestServer := {
+ThisBuild / stopTestServer :=
   TestServer.stop()
-}
 
 addCommandAlias("integrate", "startTestServer; test")
