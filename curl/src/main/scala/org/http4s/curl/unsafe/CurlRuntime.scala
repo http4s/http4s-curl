@@ -54,6 +54,7 @@ object CurlRuntime {
       installGlobal {
         CurlRuntime()
       }
+      ()
     }
 
     _global
