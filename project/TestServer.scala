@@ -1,5 +1,5 @@
 import java.io.IOException
-import java.net.URL
+import java.net.URI
 import sbt._
 import Keys._
 import scala.util.{Failure, Success, Try}
@@ -41,7 +41,7 @@ object TestServer {
 
   private def waitForStart(): Try[_] = {
     val maxAttempts = 10
-    val u = new URL("http://localhost:8080")
+    val u = new URI("http://localhost:8080").toURL
     val c = u.openConnection()
     val result = (1 to maxAttempts).toStream
       .map { i =>
