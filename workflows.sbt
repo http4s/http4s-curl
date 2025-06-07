@@ -1,7 +1,7 @@
 import org.typelevel.sbt.gha.WorkflowStep.Use
 ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
 ThisBuild / githubWorkflowOSes :=
-  Seq("ubuntu-latest", "ubuntu-22.04", "macos-11", "macos-12", "windows-2022")
+  Seq("ubuntu-latest", "ubuntu-22.04", "macos-13", "windows-2022")
 ThisBuild / githubWorkflowBuildMatrixExclusions ++= Seq(
   MatrixExclude(Map("scala" -> "3", "os" -> "windows-2022")), // dottydoc bug
   MatrixExclude(Map("project" -> "rootJVM")), // no need to run

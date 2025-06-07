@@ -31,8 +31,7 @@ jobs:
         os:
           - ubuntu-latest
           - ubuntu-22.04
-          - macos-11
-          - macos-12
+          - macos-13
           - windows-2022
         scala: [3, 2.13]
         java: [temurin@17]
