@@ -18,7 +18,7 @@ ThisBuild / githubWorkflowBuildPostamble ~= {
 ThisBuild / githubWorkflowGeneratedCI ~= {
   _.map { job =>
     if (job.id == "build")
-      job.copy(env = job.env.updated("EXPERIMENTAL", s"$${{ matrix.experimental }}"))
+      job.withEnv(job.env.updated("EXPERIMENTAL", s"$${{ matrix.experimental }}"))
     else job
   }
 }
@@ -63,7 +63,7 @@ ThisBuild / githubWorkflowJobSetup ++= Seq(
 ThisBuild / githubWorkflowBuild ~= { steps =>
   steps.map {
     case step: WorkflowStep.Sbt if step.name == Some("Test") =>
-      step.copy(commands = List("integrate"))
+      step.withCommands(List("integrate"))
     case other => other
   }
 }
