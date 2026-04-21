@@ -35,7 +35,7 @@ object CurlRuntime extends CurlRuntimeGlobalState {
   ): CurlRuntimeState = {
     val (compute, poller, shutdown) =
       IORuntime.createWorkStealingComputeThreadPool(
-        threads = 2,
+        threads = Math.max(2, Runtime.getRuntime.availableProcessors()),
         pollingSystem = CurlPollingSystem,
       )
     CurlRuntimeState(
