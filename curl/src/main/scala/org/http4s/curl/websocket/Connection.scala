@@ -28,7 +28,7 @@ import org.http4s.Uri
 import org.http4s.client.websocket._
 import org.http4s.curl.internal.Utils
 import org.http4s.curl.internal._
-import org.http4s.curl.unsafe.CurlExecutorScheduler
+import org.http4s.curl.unsafe.CurlApi
 import org.http4s.curl.unsafe.libcurl
 import org.http4s.curl.unsafe.libcurl_const
 import scodec.bits.ByteVector
@@ -68,6 +68,7 @@ final private class Connection private (
   ): CSize = {
     val realsize = size * nmemb
     val meta = handler.wsMeta()
+    if (meta == null) return realsize
 
     val toEnq = receiving
       .modify {
@@ -85,10 +86,11 @@ final private class Connection private (
               if (meta.isText) ReceivingType.Text
               else if (meta.isBinary) ReceivingType.Binary
               else if (meta.isPing) ReceivingType.Ping
+              else if (meta.isPong) ReceivingType.Pong
               else throw InvalidFrame
 
             val recv =
-              Receiving(buffer, realsize, meta.isFinal, frameType, meta.bytesLeft.toULong)
+              Receiving(buffer, realsize, meta.isFinal, frameType, meta.bytesLeft.toUSize)
 
             val optF = recv.toFrame
             if (optF.isDefined) (None, optF)
@@ -114,9 +116,9 @@ final private class Connection private (
       IO {
         val sent = stackalloc[CSize]()
         val buffer = data.toPtr
-        val size = data.size.toULong
+        val size = data.size.toUSize
 
-        handler.wsSend(buffer, size, sent, 0.toULong, flags.toUInt)
+        handler.wsSend(buffer, size, sent, 0.toUSize, flags.toUInt)
       }
     }
 }
@@ -129,6 +131,7 @@ private object Connection {
     @inline def isText: Boolean = (flags & libcurl_const.CURLWS_TEXT) != 0
     @inline def isBinary: Boolean = (flags & libcurl_const.CURLWS_BINARY) != 0
     @inline def isPing: Boolean = (flags & libcurl_const.CURLWS_PING) != 0
+    @inline def isPong: Boolean = (flags & libcurl_const.CURLWS_PONG) != 0
     @inline def isClose: Boolean = (flags & libcurl_const.CURLWS_CLOSE) != 0
     @inline def offset: Long = !meta.at3
     @inline def bytesLeft: Long = !meta.at4
@@ -208,7 +211,7 @@ private object Connection {
 
   def apply(
       req: WSRequest,
-      ec: CurlExecutorScheduler,
+      api: CurlApi,
       recvBufferSize: Int,
       pauseOn: Int,
       resumeOn: Int,
@@ -237,7 +240,7 @@ private object Connection {
     )
     _ <- setup(req, verbose)(con)
     _ <- gc.add(con)
-    _ <- ec.addHandleR(handler.curl, con.onTerminated)
+    _ <- api.addHandleR(handler.curl, con.onTerminated)
     // Wait until established or throw error
     _ <- estab.get.flatMap(IO.fromEither).toResource
   } yield con
@@ -249,6 +252,7 @@ private object ReceivingType {
   case object Text extends ReceivingType
   case object Binary extends ReceivingType
   case object Ping extends ReceivingType
+  case object Pong extends ReceivingType
 }
 
 final private case class Receiving(
@@ -260,7 +264,7 @@ final private case class Receiving(
 
   def add(buffer: Ptr[Byte], size: CSize): Receiving = {
     val remainedAfter = left - size
-    assert(remainedAfter >= 0.toULong)
+    assert(remainedAfter >= 0.toUSize)
     copy(
       payload = payload ++ ByteVector.fromPtr(buffer, size.toLong),
       left = remainedAfter,
@@ -276,6 +280,8 @@ final private case class Receiving(
           WSFrame.Binary(payload, last)
         case Receiving(payload, _, ReceivingType.Ping, _) =>
           WSFrame.Ping(payload)
+        case Receiving(payload, _, ReceivingType.Pong, _) =>
+          WSFrame.Pong(payload)
       }
     )
 }

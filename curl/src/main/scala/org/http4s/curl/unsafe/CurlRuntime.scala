@@ -19,45 +19,32 @@ package unsafe
 
 import cats.effect.unsafe.IORuntime
 import cats.effect.unsafe.IORuntimeConfig
-import cats.effect.unsafe.Scheduler
 
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.ExecutionContext
 import scala.scalanative.unsafe._
 
-object CurlRuntime {
+object CurlRuntime extends CurlRuntimeGlobalState {
 
   def apply(): IORuntime = apply(IORuntimeConfig())
 
-  def apply(config: IORuntimeConfig): IORuntime = {
-    val (ecScheduler, shutdown) = defaultExecutionContextScheduler()
-    IORuntime(ecScheduler, ecScheduler, ecScheduler, shutdown, config)
+  def apply(config: IORuntimeConfig): IORuntime =
+    initializeState(config).runtime
+
+  private[curl] def initializeState(
+      config: IORuntimeConfig = IORuntimeConfig()
+  ): CurlRuntimeState = {
+    val (compute, poller, shutdown) =
+      IORuntime.createWorkStealingComputeThreadPool(
+        threads = 2,
+        pollingSystem = CurlPollingSystem,
+      )
+    CurlRuntimeState(
+      IORuntime(compute, compute, compute, List(poller), shutdown, config),
+      poller,
+    )
   }
 
-  def defaultExecutionContextScheduler(): (ExecutionContext with Scheduler, () => Unit) = {
-    val (ecScheduler, shutdown) = CurlExecutorScheduler(64)
-    (ecScheduler, shutdown)
-  }
-
-  private[this] var _global: IORuntime = null
-
-  private[curl] def installGlobal(global: => IORuntime): Boolean =
-    if (_global == null) {
-      _global = global
-      true
-    } else {
-      false
-    }
-
-  lazy val global: IORuntime = {
-    if (_global == null) {
-      installGlobal {
-        CurlRuntime()
-      }
-    }
-
-    _global
-  }
+  protected def defaultRuntimeInstance(): CurlRuntimeState = initializeState()
 
   def curlVersion: String = fromCString(libcurl.curl_version())
 
@@ -87,5 +74,45 @@ object CurlRuntime {
   }
 
   def isWebsocketAvailable: Boolean = protocols.contains("ws")
+
+}
+
+private[curl] final case class CurlRuntimeState(runtime: IORuntime, api: CurlApi)
+
+/** Global singleton IORuntime and CurlApi, following cats-effect's
+  * IORuntimeCompanionPlatform pattern. First call to installGlobal or
+  * global wins; the poller is set as a side effect of CurlRuntime.apply().
+  */
+private[curl] trait CurlRuntimeGlobalState {
+
+  @volatile private[this] var _state: CurlRuntimeState = null
+
+  /** Access to the curl polling API for adding/removing handles */
+  def api: CurlApi = {
+    ensureInitialized()
+    _state.api
+  }
+
+  private[curl] def installGlobal(instance: => CurlRuntimeState): Boolean = synchronized {
+    if (_state == null) {
+      _state = instance
+      true
+    } else {
+      false
+    }
+  }
+
+  lazy val global: IORuntime = {
+    ensureInitialized()
+    _state.runtime
+  }
+
+  private def ensureInitialized(): Unit = {
+    if (_state == null) {
+      val _ = installGlobal(defaultRuntimeInstance())
+    }
+  }
+
+  protected def defaultRuntimeInstance(): CurlRuntimeState
 
 }

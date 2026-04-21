@@ -54,13 +54,13 @@ final private[curl] class RequestSend private (
       .unsafeRunSync() match {
       case Some(bytes) if bytes.nonEmpty =>
         bytes.copyToPtr(buffer, 0)
-        bytes.length.toULong
+        bytes.length.toUSize
       case Some(_) =>
         dispatcher.unsafeRunAndForget(
           flowControl.onSendPaused.to[IO] *> requestBodyQueue.offer(())
         )
-        libcurl_const.CURL_READFUNC_PAUSE.toULong
-      case None => 0.toULong
+        libcurl_const.CURL_READFUNC_PAUSE.toUSize
+      case None => 0.toUSize
     }
 }
 

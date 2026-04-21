@@ -60,11 +60,11 @@ class CurlClientSuite extends CatsEffectSuite {
       .assert
   }
 
-  clientFixture.test("error") { client =>
+  clientFixture.test("error - unsupported protocol") { client =>
     client.expect[String]("unsupported://server").intercept[CurlError]
   }
 
-  clientFixture.test("error") { client =>
+  clientFixture.test("error - empty URL") { client =>
     client.expect[String]("").intercept[CurlError]
   }
 

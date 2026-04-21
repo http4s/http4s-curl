@@ -45,7 +45,7 @@ final private[curl] class RequestRecv private (
     done: Deferred[IO, Either[Throwable, Unit]],
     dispatcher: Dispatcher[IO],
 ) {
-  @inline val responseBody: Stream[IO, Byte] = Stream
+  val responseBody: Stream[IO, Byte] = Stream
     .repeatEval(
       // sequencing is important! the docs for `curl_easy_pause` say:
       // > When this function is called to unpause receiving,
@@ -57,18 +57,18 @@ final private[curl] class RequestRecv private (
     .map(Chunk.byteVector(_))
     .unchunks
 
-  @inline def response(): Resource[IO, Response[IO]] = responseD.get.rethrow
+  def response(): Resource[IO, Response[IO]] = responseD.get.rethrow
     .map(_.withBodyStream(responseBody).withTrailerHeaders(trailerHeaders.get.rethrow))
     .toResource
 
-  @inline def onTerminated(x: Either[Throwable, Unit]): Unit =
+  def onTerminated(x: Either[Throwable, Unit]): Unit =
     dispatcher.unsafeRunAndForget(
       // TODO refactor to make it simpler
       x.fold(x => responseD.complete(Left(x)), _ => IO.unit) *>
         done.complete(x) *> responseBodyQueue.offer(None)
     )
 
-  @inline def onWrite(
+  def onWrite(
       buffer: Ptr[CChar],
       size: CSize,
       nmemb: CSize,
@@ -81,9 +81,9 @@ final private[curl] class RequestRecv private (
       size * nmemb
     } else {
       flowControl.onRecvPaused.unsafeRunSync()
-      libcurl_const.CURL_WRITEFUNC_PAUSE.toULong
+      libcurl_const.CURL_WRITEFUNC_PAUSE.toUSize
     }
-  @inline def onHeader(
+  def onHeader(
       buffer: Ptr[CChar],
       size: CSize,
       nitems: CSize,
@@ -94,9 +94,9 @@ final private[curl] class RequestRecv private (
       .liftTo[IO]
 
     def parseHeader(header: String): IO[Header.Raw] =
-      header.dropRight(2).split(": ") match {
-        case Array(name, value) => IO.pure(Header.Raw(CIString(name), value))
-        case _ => IO.raiseError(new RuntimeException("header_callback"))
+      header.dropRight(2).split(":", 2) match {
+        case Array(name, value) => IO.pure(Header.Raw(CIString(name), value.trim))
+        case _ => IO.raiseError(new RuntimeException(s"header_callback: failed to parse header"))
       }
 
     val go = responseD.tryGet

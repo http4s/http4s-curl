@@ -21,7 +21,6 @@ import cats.effect.IOApp
 import cats.effect.unsafe.IORuntime
 import org.http4s.client.Client
 import org.http4s.client.websocket.WSClient
-import org.http4s.curl.unsafe.CurlExecutorScheduler
 import org.http4s.curl.unsafe.CurlRuntime
 import org.http4s.curl.websocket.CurlWSClient
 
@@ -29,7 +28,7 @@ trait CurlApp extends IOApp {
 
   final override lazy val runtime: IORuntime = {
     val installed = CurlRuntime.installGlobal {
-      CurlRuntime(runtimeConfig)
+      CurlRuntime.createInstance(runtimeConfig)
     }
 
     if (!installed) {
@@ -42,8 +41,7 @@ trait CurlApp extends IOApp {
     CurlRuntime.global
   }
 
-  private def scheduler = runtime.compute.asInstanceOf[CurlExecutorScheduler]
-  final lazy val curlClient: Client[IO] = http.CurlClient(scheduler)
+  final lazy val curlClient: Client[IO] = http.CurlClient(CurlRuntime.api)
 
   /** gets websocket client if current libcurl environment supports it */
   final def websocket(
@@ -51,7 +49,7 @@ trait CurlApp extends IOApp {
       verbose: Boolean = false,
   ): Option[WSClient[IO]] =
     CurlWSClient(
-      scheduler,
+      CurlRuntime.api,
       recvBufferSize,
       pauseOn = recvBufferSize / 10,
       resumeOn = (recvBufferSize * 0.3).floor.toInt,

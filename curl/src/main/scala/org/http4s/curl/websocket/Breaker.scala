@@ -36,13 +36,13 @@ final private class Breaker private (
     open: Int,
     verbose: Boolean,
 ) {
-  private val unpauseRecv = IO.blocking {
+  private val unpauseRecv = IO {
     if (verbose) println("continue recv")
 
     handler.pause(libcurl_const.CURLPAUSE_RECV_CONT)
   }
 
-  private val pauseRecv = IO.blocking {
+  private val pauseRecv = IO {
     if (verbose) println("pause recv")
     handler.pause(libcurl_const.CURLPAUSE_RECV)
   }

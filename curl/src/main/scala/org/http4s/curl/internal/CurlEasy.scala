@@ -117,7 +117,7 @@ private[curl] object CurlEasy {
     for {
       h <- createHandler
       z <- Utils.newZone
-      buf = z.alloc(CURL_ERROR_SIZE.toULong)
+      buf = z.alloc(CURL_ERROR_SIZE.toUSize)
       _ <- Resource.eval(IO {
         val code = curl_easy_setopt_errorbuffer(h, CURLOPT_ERRORBUFFER, buf)
         if (code.isError) {

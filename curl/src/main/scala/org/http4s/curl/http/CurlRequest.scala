@@ -21,12 +21,12 @@ import org.http4s.Request
 import org.http4s.Response
 import org.http4s.curl.internal.Utils
 import org.http4s.curl.internal._
-import org.http4s.curl.unsafe.CurlExecutorScheduler
+import org.http4s.curl.unsafe.CurlApi
 
 private[curl] object CurlRequest {
   private def setup(
       handle: CurlEasy,
-      ec: CurlExecutorScheduler,
+      api: CurlApi,
       send: RequestSend,
       recv: RequestRecv,
       req: Request[IO],
@@ -56,7 +56,7 @@ private[curl] object CurlRequest {
             case HttpVersion.`HTTP/3` => libcurl_const.CURL_HTTP_VERSION_3
             case _ => libcurl_const.CURL_HTTP_VERSION_NONE
           }
-          handle.setHttpVersion(httpVersion)
+          handle.setHttpVersion(httpVersion.toSize)
 
           req.headers // curl adds these headers automatically, so we explicitly disable them
             .transform(Header.Raw(ci"Expect", "") :: Header.Raw(ci"Transfer-Encoding", "") :: _)
@@ -73,19 +73,19 @@ private[curl] object CurlRequest {
           handle.setWriteData(Utils.toPtr(recv))
           handle.setWriteFunction(RequestRecv.writeCallback(_, _, _, _))
 
-          ec.addHandle(handle.curl, recv.onTerminated)
+          api.addHandle(handle.curl, recv.onTerminated)
         }
       )
     )
 
-  def apply(ec: CurlExecutorScheduler, req: Request[IO]): Resource[IO, Response[IO]] = for {
+  def apply(api: CurlApi, req: Request[IO]): Resource[IO, Response[IO]] = for {
     gc <- GCRoot()
     handle <- CurlEasy()
     flow <- FlowControl(handle)
     send <- RequestSend(flow)
     recv <- RequestRecv(flow)
     _ <- gc.add(send, recv)
-    _ <- setup(handle, ec, send, recv, req)
+    _ <- setup(handle, api, send, recv, req)
     _ <- req.body.through(send.pipe).compile.drain.background
     resp <- recv.response()
   } yield resp
