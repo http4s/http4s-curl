@@ -145,8 +145,8 @@ object CurlPollingSystem extends PollingSystem {
 }
 
 final class CurlPoller(val multiHandle: Ptr[libcurl.CURLM]) extends PollerMetrics {
-  val callbacks: mutable.HashMap[Ptr[libcurl.CURL], Either[Throwable, Unit] => Unit] =
-    mutable.HashMap.empty
+  val callbacks: scala.collection.concurrent.TrieMap[Ptr[libcurl.CURL], Either[Throwable, Unit] => Unit] =
+    scala.collection.concurrent.TrieMap.empty
   val completedBuffers: mutable.ArrayDeque[(Ptr[libcurl.CURL], libcurl.CURLcode)] =
     mutable.ArrayDeque.empty
 
