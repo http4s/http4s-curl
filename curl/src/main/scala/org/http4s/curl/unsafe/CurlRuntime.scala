@@ -77,7 +77,7 @@ object CurlRuntime extends CurlRuntimeGlobalState {
 
 }
 
-private[curl] final case class CurlRuntimeState(runtime: IORuntime, api: CurlApi)
+final private[curl] case class CurlRuntimeState(runtime: IORuntime, api: CurlApi)
 
 /** Global singleton IORuntime and CurlApi, following cats-effect's
   * IORuntimeCompanionPlatform pattern. First call to installGlobal or
@@ -107,11 +107,10 @@ private[curl] trait CurlRuntimeGlobalState {
     _state.runtime
   }
 
-  private def ensureInitialized(): Unit = {
+  private def ensureInitialized(): Unit =
     if (_state == null) {
       val _ = installGlobal(defaultRuntimeInstance())
     }
-  }
 
   protected def defaultRuntimeInstance(): CurlRuntimeState
 
