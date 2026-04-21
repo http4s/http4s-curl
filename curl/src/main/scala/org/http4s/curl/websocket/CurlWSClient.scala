@@ -34,14 +34,9 @@ private[curl] object CurlWSClient {
       pauseOn: Int = 10,
       resumeOn: Int = 30,
       verbose: Boolean = false,
-  ): IO[WSClient[IO]] = IO {
-    val api = CurlRuntime.api
-    if (api != null) {
-      apply(api, recvBufferSize, pauseOn, resumeOn, verbose).getOrElse(
-        throw new RuntimeException("websocket client is not supported in this environment")
-      )
-    } else throw new RuntimeException("Not running on CurlRuntime")
-  }
+  ): IO[WSClient[IO]] = IO.fromOption(
+    apply(CurlRuntime.api, recvBufferSize, pauseOn, resumeOn, verbose)
+  )(new RuntimeException("WebSocket is not supported in this environment"))
 
   def apply(
       api: CurlApi,

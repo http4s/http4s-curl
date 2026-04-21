@@ -27,33 +27,30 @@ import org.http4s.curl.CurlError
 import scala.collection.mutable
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
-import java.util.concurrent.ConcurrentHashMap
 
 object CurlPollingSystem extends PollingSystem {
   type Api = CurlApi
   type Poller = CurlPoller
 
+  // Global one-time initialization (NOT thread-safe, must happen once)
   private val initCode = libcurl.curl_global_init(libcurl_const.CURL_GLOBAL_DEFAULT)
   if (initCode.isError)
     throw CurlError.fromCode(initCode)
 
-  private val multiHandle = libcurl.curl_multi_init()
-  if (multiHandle == null)
-    throw new RuntimeException("curl_multi_init")
-
-  private val callbacks =
-    new ConcurrentHashMap[Ptr[libcurl.CURL], Either[Throwable, Unit] => Unit]
-  private val primaryPoller = new java.util.concurrent.atomic.AtomicReference[CurlPoller](null)
-
   def makePoller(): CurlPoller = {
-    val poller = new CurlPoller(multiHandle, callbacks)
-    primaryPoller.compareAndSet(null, poller)
-    poller
+    val multiHandle = libcurl.curl_multi_init()
+    if (multiHandle == null)
+      throw new RuntimeException("curl_multi_init")
+    new CurlPoller(multiHandle)
   }
 
-  def makeApi(ctx: PollingContext[CurlPoller]): CurlApi = new CurlApi(ctx, this)
+  def makeApi(ctx: PollingContext[CurlPoller]): CurlApi = new CurlApi(ctx)
 
-  def closePoller(poller: CurlPoller): Unit = ()
+  def closePoller(poller: CurlPoller): Unit = {
+    val code = libcurl.curl_multi_cleanup(poller.multiHandle)
+    if (code.isError)
+      throw CurlError.fromMCode(code)
+  }
 
   /** Polls for curl I/O activity. Only discovers completed transfers and buffers
     * them — does NOT fire completion callbacks. Callbacks are fired in
@@ -61,8 +58,6 @@ object CurlPollingSystem extends PollingSystem {
     * thread to execute rescheduled fibers between calls.
     */
   def poll(poller: CurlPoller, nanos: Long): PollResult = {
-    if (poller ne primaryPoller.get()) return PollResult.Interrupted
-
     val timeoutMillis =
       if (nanos < 0) Int.MaxValue
       else (nanos / 1000000L).min(Int.MaxValue.toLong).toInt
@@ -100,7 +95,7 @@ object CurlPollingSystem extends PollingSystem {
             if (curMsg == libcurl_const.CURLMSG_DONE) {
               val handle = libcurl.curl_CURLMsg_easy_handle(info)
               val result = libcurl.curl_CURLMsg_data_result(info)
-              poller.completedBuffers += ((handle, result.isOk, result))
+              poller.completedBuffers += ((handle, result))
 
               val code = libcurl.curl_multi_remove_handle(poller.multiHandle, handle)
               if (code.isError)
@@ -110,13 +105,8 @@ object CurlPollingSystem extends PollingSystem {
           } else false
         }) ()
 
-        val result =
-          if (poller.completedBuffers.nonEmpty)
-            PollResult.Complete
-          else
-            PollResult.Interrupted
-
-        result
+        if (poller.completedBuffers.nonEmpty) PollResult.Complete
+        else PollResult.Interrupted
       }
     }
   }
@@ -131,10 +121,9 @@ object CurlPollingSystem extends PollingSystem {
     else {
       var rescheduled = false
       while (poller.completedBuffers.nonEmpty) {
-        val (handle, isOk, result) = poller.completedBuffers.remove(0)
-        val cb = poller.callbacks.remove(handle)
-        if (cb != null) {
-          cb(if (isOk) Right(()) else Left(CurlError.fromCode(result)))
+        val (handle, result) = poller.completedBuffers.remove(0)
+        poller.callbacks.remove(handle).foreach { cb =>
+          cb(if (result.isOk) Right(()) else Left(CurlError.fromCode(result)))
           rescheduled = true
         }
       }
@@ -142,44 +131,28 @@ object CurlPollingSystem extends PollingSystem {
     }
 
   def needsPoll(poller: CurlPoller): Boolean =
-    (poller eq primaryPoller.get()) &&
-      (!poller.callbacks.isEmpty || poller.completedBuffers.nonEmpty)
+    poller.callbacks.nonEmpty || poller.completedBuffers.nonEmpty
 
   def interrupt(targetThread: Thread, targetPoller: CurlPoller): Unit = {
-    libcurl.curl_multi_wakeup(multiHandle)
-    ()
-  }
-
-  def metrics(poller: CurlPoller): PollerMetrics = CurlPollerMetrics
-
-  def close(): Unit = {
-    val code = libcurl.curl_multi_cleanup(multiHandle)
-    libcurl.curl_global_cleanup()
+    val code = libcurl.curl_multi_wakeup(targetPoller.multiHandle)
     if (code.isError)
       throw CurlError.fromMCode(code)
   }
 
-  private[curl] def addHandle(
-      handle: Ptr[libcurl.CURL],
-      cb: Either[Throwable, Unit] => Unit,
-  ): Unit = {
-    callbacks.put(handle, cb)
-    val code = libcurl.curl_multi_add_handle(multiHandle, handle)
-    if (code.isError) {
-      callbacks.remove(handle)
-      throw CurlError.fromMCode(code)
-    }
-    val _ = libcurl.curl_multi_wakeup(multiHandle)
-  }
+  def metrics(poller: CurlPoller): PollerMetrics = poller
 
-  private[curl] def removeHandle(handle: Ptr[libcurl.CURL]): Unit = {
-    val cb = callbacks.remove(handle)
-    if (cb != null) cb(Right(()))
-  }
-
+  def close(): Unit = libcurl.curl_global_cleanup()
 }
 
-private object CurlPollerMetrics extends PollerMetrics {
+final class CurlPoller(val multiHandle: Ptr[libcurl.CURLM]) extends PollerMetrics {
+  val callbacks: mutable.HashMap[Ptr[libcurl.CURL], Either[Throwable, Unit] => Unit] =
+    mutable.HashMap.empty
+  val completedBuffers: mutable.ArrayDeque[(Ptr[libcurl.CURL], libcurl.CURLcode)] =
+    mutable.ArrayDeque.empty
+
+  override def toString: String = "CurlPoller"
+
+  // PollerMetrics — all return 0 (matches current behavior)
   def operationsOutstandingCount(): Int = 0
   def totalOperationsSubmittedCount(): Long = 0
   def totalOperationsSucceededCount(): Long = 0
@@ -207,17 +180,8 @@ private object CurlPollerMetrics extends PollerMetrics {
   def totalWriteOperationsCanceledCount(): Long = 0
 }
 
-final class CurlPoller(
-    val multiHandle: Ptr[libcurl.CURLM],
-    val callbacks: ConcurrentHashMap[Ptr[libcurl.CURL], Either[Throwable, Unit] => Unit],
-) {
-  val completedBuffers: mutable.ArrayDeque[(Ptr[libcurl.CURL], Boolean, libcurl.CURLcode)] =
-    mutable.ArrayDeque.empty
-}
-
 final class CurlApi private[curl] (
     private val ctx: PollingContext[CurlPoller],
-    private val system: CurlPollingSystem.type,
 ) {
 
   /** Adds a curl handler that is expected to terminate
@@ -231,7 +195,17 @@ final class CurlApi private[curl] (
     * @param cb callback to run when this handler has finished its transfer
     */
   def addHandle(handle: Ptr[libcurl.CURL], cb: Either[Throwable, Unit] => Unit): Unit =
-    system.addHandle(handle, cb)
+    ctx.accessPoller { poller =>
+      poller.callbacks(handle) = cb
+      val code = libcurl.curl_multi_add_handle(poller.multiHandle, handle)
+      if (code.isError) {
+        poller.callbacks.remove(handle)
+        throw CurlError.fromMCode(code)
+      }
+      val wakeupCode = libcurl.curl_multi_wakeup(poller.multiHandle)
+      if (wakeupCode.isError)
+        throw CurlError.fromMCode(wakeupCode)
+    }
 
   /** Add a curl handle for a transfer that doesn't finish e.g. a websocket transfer
     * it adds a handle to multi handle, and removes it when it goes out of scope
@@ -244,6 +218,32 @@ final class CurlApi private[curl] (
   def addHandleR(
       handle: Ptr[libcurl.CURL],
       cb: Either[Throwable, Unit] => Unit,
-  ): Resource[IO, Unit] =
-    Resource.make(IO(addHandle(handle, cb)))(_ => IO(system.removeHandle(handle)))
+  ): Resource[IO, Unit] = {
+    var owningPoller: CurlPoller = null
+    Resource.make(
+      IO {
+        ctx.accessPoller { poller =>
+          owningPoller = poller
+          poller.callbacks(handle) = cb
+          val code = libcurl.curl_multi_add_handle(poller.multiHandle, handle)
+          if (code.isError) {
+            poller.callbacks.remove(handle)
+            throw CurlError.fromMCode(code)
+          }
+          val wakeupCode = libcurl.curl_multi_wakeup(poller.multiHandle)
+          if (wakeupCode.isError)
+            throw CurlError.fromMCode(wakeupCode)
+        }
+      }
+    ) { _ =>
+      IO {
+        if (owningPoller != null) {
+          val _ = owningPoller.callbacks.remove(handle)
+          val code = libcurl.curl_multi_remove_handle(owningPoller.multiHandle, handle)
+          if (code.isError)
+            throw CurlError.fromMCode(code)
+        }
+      }
+    }
+  }
 }

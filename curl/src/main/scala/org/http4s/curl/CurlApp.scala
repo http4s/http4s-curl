@@ -28,7 +28,7 @@ trait CurlApp extends IOApp {
 
   final override lazy val runtime: IORuntime = {
     val installed = CurlRuntime.installGlobal {
-      CurlRuntime.createInstance(runtimeConfig)
+      CurlRuntime.initializeState(runtimeConfig)
     }
 
     if (!installed) {

@@ -21,5 +21,5 @@ case object InvalidTextFrame extends Exception("Text frame data must be valid ut
 case object PartialFragmentFrame
     extends Exception("Partial fragments are not supported by this driver")
     with Error
-case object InvalidFrame extends Exception("Text frame data must be valid utf8") with Error
+case object InvalidFrame extends Exception("Received WebSocket frame with unrecognized type") with Error
 case object InvalidRuntime extends RuntimeException("Not running on CurlRuntime") with Error

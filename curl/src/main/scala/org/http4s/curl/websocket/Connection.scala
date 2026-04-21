@@ -263,8 +263,9 @@ final private case class Receiving(
 ) {
 
   def add(buffer: Ptr[Byte], size: CSize): Receiving = {
+    if (size > left)
+      throw new IllegalStateException(s"Received ${size.toLong} bytes but only ${left.toLong} remaining")
     val remainedAfter = left - size
-    assert(remainedAfter >= 0.toUSize)
     copy(
       payload = payload ++ ByteVector.fromPtr(buffer, size.toLong),
       left = remainedAfter,

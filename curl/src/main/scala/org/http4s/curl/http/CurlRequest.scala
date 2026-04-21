@@ -72,8 +72,6 @@ private[curl] object CurlRequest {
 
           handle.setWriteData(Utils.toPtr(recv))
           handle.setWriteFunction(RequestRecv.writeCallback(_, _, _, _))
-
-          api.addHandle(handle.curl, recv.onTerminated)
         }
       )
     )
@@ -86,6 +84,7 @@ private[curl] object CurlRequest {
     recv <- RequestRecv(flow)
     _ <- gc.add(send, recv)
     _ <- setup(handle, api, send, recv, req)
+    _ <- api.addHandleR(handle.curl, recv.onTerminated)
     _ <- req.body.through(send.pipe).compile.drain.background
     resp <- recv.response()
   } yield resp

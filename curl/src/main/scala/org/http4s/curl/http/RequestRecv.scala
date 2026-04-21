@@ -63,8 +63,12 @@ final private[curl] class RequestRecv private (
 
   def onTerminated(x: Either[Throwable, Unit]): Unit =
     dispatcher.unsafeRunAndForget(
-      // TODO refactor to make it simpler
-      x.fold(x => responseD.complete(Left(x)), _ => IO.unit) *>
+      responseD.complete(
+        x.fold(
+          Left(_),
+          _ => Left(new RuntimeException("Connection terminated before response headers were received"))
+        )
+      ) *>
         done.complete(x) *> responseBodyQueue.offer(None)
     )
 
@@ -96,7 +100,7 @@ final private[curl] class RequestRecv private (
     def parseHeader(header: String): IO[Header.Raw] =
       header.dropRight(2).split(":", 2) match {
         case Array(name, value) => IO.pure(Header.Raw(CIString(name), value.trim))
-        case _ => IO.raiseError(new RuntimeException(s"header_callback: failed to parse header"))
+        case _ => IO.raiseError(new RuntimeException(s"header_callback: failed to parse header: '$header'"))
       }
 
     val go = responseD.tryGet
@@ -113,7 +117,7 @@ final private[curl] class RequestRecv private (
                     status <- IO(c.toInt).flatMap(Status.fromInt(_).liftTo[IO])
                     _ <- responseBuilder.set(Some(Response[IO](status, version)))
                   } yield ()
-                case _ => IO.raiseError(new RuntimeException("header_callback"))
+                case _ => IO.raiseError(new RuntimeException(s"header_callback: failed to parse status line: '$decoded'"))
               }
             case Some(wipResponse) =>
               decoded.flatMap {

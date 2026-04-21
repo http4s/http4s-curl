@@ -24,9 +24,5 @@ import org.http4s.curl.unsafe.CurlRuntime
 private[curl] object CurlClient {
   def apply(api: CurlApi): Client[IO] = Client(CurlRequest(api, _))
 
-  def get: IO[Client[IO]] = IO {
-    val api = CurlRuntime.api
-    if (api != null) apply(api)
-    else throw new RuntimeException("Not running on CurlRuntime")
-  }
+  def get: IO[Client[IO]] = IO(apply(CurlRuntime.api))
 }
