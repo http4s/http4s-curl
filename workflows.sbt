@@ -3,7 +3,7 @@ ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
 ThisBuild / githubWorkflowOSes :=
   Seq("ubuntu-latest", "ubuntu-20.04", "ubuntu-22.04", "macos-11", "macos-12", "windows-2022")
 ThisBuild / githubWorkflowBuildMatrixExclusions ++= Seq(
-  MatrixExclude(Map("scala" -> Versions.scala3, "os" -> "windows-2022")), // dottydoc bug
+  MatrixExclude(Map("scala" -> "3", "os" -> "windows-2022")), // dottydoc bug
   MatrixExclude(Map("project" -> "rootJVM")), // no need to run
 )
 
