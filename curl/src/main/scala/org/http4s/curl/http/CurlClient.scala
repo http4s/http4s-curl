@@ -18,14 +18,11 @@ package org.http4s.curl.http
 
 import cats.effect._
 import org.http4s.client.Client
-import org.http4s.curl.unsafe.CurlExecutorScheduler
+import org.http4s.curl.unsafe.CurlApi
+import org.http4s.curl.unsafe.CurlRuntime
 
 private[curl] object CurlClient {
-  def apply(ec: CurlExecutorScheduler): Client[IO] = Client(CurlRequest(ec, _))
+  def apply(api: CurlApi): Client[IO] = Client(CurlRequest(api, _))
 
-  def get: IO[Client[IO]] = IO.executionContext.flatMap {
-    case ec: CurlExecutorScheduler => IO(apply(ec))
-    case _ =>
-      IO.raiseError(new RuntimeException("CurlExecutorScheduler not found in execution context"))
-  }
+  def get: IO[Client[IO]] = IO(apply(CurlRuntime.api))
 }

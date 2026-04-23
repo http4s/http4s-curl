@@ -21,7 +21,7 @@ import org.http4s.Request
 import org.http4s.Response
 import org.http4s.curl.internal.Utils
 import org.http4s.curl.internal._
-import org.http4s.curl.unsafe.CurlExecutorScheduler
+import org.http4s.curl.unsafe.CurlApi
 
 private[curl] object CurlRequest {
   private def setup(
@@ -75,7 +75,7 @@ private[curl] object CurlRequest {
       )
     )
 
-  def apply(ec: CurlExecutorScheduler, req: Request[IO]): Resource[IO, Response[IO]] = for {
+  def apply(api: CurlApi, req: Request[IO]): Resource[IO, Response[IO]] = for {
     gc <- GCRoot()
     handle <- CurlEasy()
     flow <- FlowControl(handle)
@@ -83,7 +83,7 @@ private[curl] object CurlRequest {
     recv <- RequestRecv(flow)
     _ <- gc.add(send, recv, handle)
     _ <- setup(handle, send, recv, req)
-    _ <- Resource.eval(IO(ec.addHandle(handle.curl, recv.onTerminated)))
+    _ <- Resource.eval(IO(api.addHandle(handle.curl, recv.onTerminated)))
     _ <- req.body.through(send.pipe).compile.drain.background
     resp <- recv.response()
   } yield resp

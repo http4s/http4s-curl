@@ -18,194 +18,185 @@ package org.http4s.curl.unsafe
 
 import cats.effect.IO
 import cats.effect.kernel.Resource
-import cats.effect.unsafe.Scheduler
+import cats.effect.unsafe.PollingContext
+import cats.effect.unsafe.PollingSystem
+import cats.effect.unsafe.PollResult
+import cats.effect.unsafe.metrics.PollerMetrics
 import org.http4s.curl.CurlError
 
-import java.util.ArrayDeque
-import java.util.PriorityQueue
 import scala.collection.mutable
-import scala.concurrent.ExecutionContext
-import scala.concurrent.ExecutionContextExecutor
-import scala.concurrent.duration._
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
-import scala.util.control.NonFatal
 
-final class CurlExecutorScheduler(
-    private[this] val multiHandle: Ptr[libcurl.CURLM],
-    private[this] val pollEvery: Int,
-) extends ExecutionContextExecutor
-    with Scheduler {
+final class CurlPoller(val multiHandle: Ptr[libcurl.CURLM]) extends PollerMetrics {
+  val callbacks: mutable.HashMap[Ptr[libcurl.CURL], Either[Throwable, Unit] => Unit] =
+    mutable.HashMap.empty
 
-  private[this] var needsReschedule: Boolean = true
-  private[this] val executeQueue: ArrayDeque[Runnable] = new ArrayDeque
-  private[this] val sleepQueue: PriorityQueue[SleepTask] = new PriorityQueue
-  private[this] val callbacks: mutable.Map[Ptr[libcurl.CURL], Either[Throwable, Unit] => Unit] =
-    mutable.Map.empty
-  private[this] val noop: Runnable = () => ()
+  var processing: Boolean = false
 
-  // ExecutionContext
-  def execute(runnable: Runnable): Unit = {
-    executeQueue.add(runnable)
-    scheduleIfNeeded()
-  }
+  def operationsOutstandingCount(): Int = 0
+  def readOperationsOutstandingCount(): Int = 0
+  def writeOperationsOutstandingCount(): Int = 0
+  def connectOperationsOutstandingCount(): Int = 0
+  def acceptOperationsOutstandingCount(): Int = 0
+  def totalOperationsSubmittedCount(): Long = 0L
+  def totalOperationsSucceededCount(): Long = 0L
+  def totalOperationsErroredCount(): Long = 0L
+  def totalOperationsCanceledCount(): Long = 0L
+  def totalReadOperationsSubmittedCount(): Long = 0L
+  def totalReadOperationsSucceededCount(): Long = 0L
+  def totalReadOperationsErroredCount(): Long = 0L
+  def totalReadOperationsCanceledCount(): Long = 0L
+  def totalWriteOperationsSubmittedCount(): Long = 0L
+  def totalWriteOperationsSucceededCount(): Long = 0L
+  def totalWriteOperationsErroredCount(): Long = 0L
+  def totalWriteOperationsCanceledCount(): Long = 0L
+  def totalConnectOperationsSubmittedCount(): Long = 0L
+  def totalConnectOperationsSucceededCount(): Long = 0L
+  def totalConnectOperationsErroredCount(): Long = 0L
+  def totalConnectOperationsCanceledCount(): Long = 0L
+  def totalAcceptOperationsSubmittedCount(): Long = 0L
+  def totalAcceptOperationsSucceededCount(): Long = 0L
+  def totalAcceptOperationsErroredCount(): Long = 0L
+  def totalAcceptOperationsCanceledCount(): Long = 0L
+}
 
-  def reportFailure(t: Throwable): Unit =
-    t.printStackTrace()
+final class CurlApi(ctx: PollingContext[CurlPoller]) {
 
-  // Scheduler
-  def sleep(delay: FiniteDuration, task: Runnable): Runnable =
-    if (delay <= Duration.Zero) {
-      executeQueue.add(task)
-      scheduleIfNeeded()
-      noop
-    } else {
-      val sleepTask = new SleepTask(monotonicNanos() + delay.toNanos, task)
-      sleepQueue.add(sleepTask)
-      scheduleIfNeeded()
-      sleepTask
-    }
-
-  def nowMillis(): Long = System.currentTimeMillis()
-  def monotonicNanos(): Long = System.nanoTime()
-
-  private[this] def scheduleIfNeeded(): Unit =
-    if (needsReschedule) {
-      ExecutionContext.global.execute(() => loop())
-      needsReschedule = false
-    }
-
-  private[this] def loop(): Unit = {
-    needsReschedule = false
-    var continue = true
-
-    while (continue) {
-      // 1. Fire expired timers
-      val now = monotonicNanos()
-      while (!sleepQueue.isEmpty && sleepQueue.peek().at <= now) {
-        val task = sleepQueue.poll()
-        try task.runnable.run()
-        catch {
-          case t if NonFatal(t) => reportFailure(t)
-          case t: Throwable =>
-            t.printStackTrace()
-            sys.exit(1)
-        }
-      }
-
-      // 2. Execute fiber batch (up to pollEvery)
-      var i = 0
-      while (i < pollEvery && !executeQueue.isEmpty) {
-        val runnable = executeQueue.poll()
-        try runnable.run()
-        catch {
-          case t if NonFatal(t) => reportFailure(t)
-          case t: Throwable =>
-            t.printStackTrace()
-            sys.exit(1)
-        }
-        i += 1
-      }
-
-      // 3. Calculate timeout
-      val timeout =
-        if (!executeQueue.isEmpty) Duration.Zero
-        else if (!sleepQueue.isEmpty)
-          math.max(sleepQueue.peek().at - monotonicNanos(), 0L).nanos
-        else Duration.Inf
-
-      val noCallbacks = callbacks.isEmpty
-      val timeoutIsInf = timeout == Duration.Inf
-
-      // 4. If nothing to do, exit loop
-      if (timeoutIsInf && noCallbacks) {
-        continue = false
-      } else {
-        val timeoutMillis =
-          if (timeoutIsInf) Int.MaxValue
-          else timeout.toMillis.min(Int.MaxValue.toLong).toInt
-
-        // curl_multi_poll (blocking) if timeout > 0
-        if (timeout > Duration.Zero) {
-          val pollCode = libcurl.curl_multi_poll(multiHandle, null, 0.toUInt, timeoutMillis, null)
-          if (pollCode.isError) throw CurlError.fromMCode(pollCode)
-        }
-
-        if (!noCallbacks) {
-          // curl_multi_perform
-          val runningHandles = stackalloc[CInt]()
-          val performCode = libcurl.curl_multi_perform(multiHandle, runningHandles)
-          if (performCode.isError) throw CurlError.fromMCode(performCode)
-
-          // Drain completed transfers
-          while ({
-            val msgsInQueue = stackalloc[CInt]()
-            val info = libcurl.curl_multi_info_read(multiHandle, msgsInQueue)
-            if (info != null) {
-              val curMsg = libcurl.curl_CURLMsg_msg(info)
-              if (curMsg == libcurl_const.CURLMSG_DONE) {
-                val handle = libcurl.curl_CURLMsg_easy_handle(info)
-                callbacks.remove(handle).foreach { cb =>
-                  val result = libcurl.curl_CURLMsg_data_result(info)
-                  cb(if (result.isOk) Right(()) else Left(CurlError.fromCode(result)))
-                }
-                val code = libcurl.curl_multi_remove_handle(multiHandle, handle)
-                if (code.isError) throw CurlError.fromMCode(code)
-              }
-              true
-            } else false
-          }) ()
-        }
-
-        // 5. Check continue
-        continue = !callbacks.isEmpty || !executeQueue.isEmpty || !sleepQueue.isEmpty
-      }
-    }
-    needsReschedule = true
-  }
-
-  /** Adds a curl handle to the multi handle for I/O monitoring.
-    * The callback is invoked when the transfer completes (success or failure).
-    */
   def addHandle(handle: Ptr[libcurl.CURL], cb: Either[Throwable, Unit] => Unit): Unit = {
-    val code = libcurl.curl_multi_add_handle(multiHandle, handle)
-    if (code.isError) throw CurlError.fromMCode(code)
-    callbacks(handle) = cb
+    ctx.accessPoller { poller =>
+      poller.callbacks(handle) = cb
+      val code = libcurl.curl_multi_add_handle(poller.multiHandle, handle)
+      if (code.isError) {
+        poller.callbacks.remove(handle)
+        throw CurlError.fromMCode(code)
+      }
+    }
   }
 
-  /** Adds a curl handle as a managed resource. The handle is removed when the
-    * resource is released, firing the callback with Right(()) on cleanup.
-    */
   def addHandleR(
       handle: Ptr[libcurl.CURL],
       cb: Either[Throwable, Unit] => Unit,
-  ): Resource[IO, Unit] =
-    Resource.make(IO(addHandle(handle, cb))) { _ =>
-      IO(callbacks.remove(handle).foreach(_(Right(()))))
+  ): Resource[IO, Unit] = {
+    var owningPoller: CurlPoller = null
+    Resource.make(
+      IO(ctx.accessPoller { poller =>
+        owningPoller = poller
+        poller.callbacks(handle) = cb
+        val code = libcurl.curl_multi_add_handle(poller.multiHandle, handle)
+        if (code.isError) {
+          poller.callbacks.remove(handle)
+          throw CurlError.fromMCode(code)
+        }
+      })
+    ) { _ =>
+      IO {
+        if (owningPoller != null) {
+          owningPoller.callbacks.remove(handle).foreach(_(Right(())))
+        }
+      }
     }
-
-  final private[this] class SleepTask(val at: Long, val runnable: Runnable)
-      extends Runnable
-      with Comparable[SleepTask] {
-    def run(): Unit = { sleepQueue.remove(this); () }
-    def compareTo(that: SleepTask): Int = java.lang.Long.compare(this.at, that.at)
   }
 }
 
-private[curl] object CurlExecutorScheduler {
-  def apply(pollEvery: Int): (CurlExecutorScheduler, () => Unit) = {
+final class CurlPollingSystem extends PollingSystem {
+  type Poller = CurlPoller
+  type Api = CurlApi
+
+  locally {
     val initCode = libcurl.curl_global_init(libcurl_const.CURL_GLOBAL_DEFAULT)
     if (initCode.isError) throw CurlError.fromCode(initCode)
+  }
 
-    val multiHandle = libcurl.curl_multi_init()
-    if (multiHandle == null) throw new RuntimeException("curl_multi_init")
+  def close(): Unit =
+    libcurl.curl_global_cleanup()
 
-    val shutdown = () => {
-      val code = libcurl.curl_multi_cleanup(multiHandle)
-      libcurl.curl_global_cleanup()
-      if (code.isError) throw CurlError.fromMCode(code)
+  def makePoller(): CurlPoller = {
+    val mh = libcurl.curl_multi_init()
+    if (mh == null) throw new RuntimeException("curl_multi_init failed")
+    new CurlPoller(mh)
+  }
+
+  def closePoller(poller: CurlPoller): Unit = {
+    val code = libcurl.curl_multi_cleanup(poller.multiHandle)
+    if (code.isError) throw CurlError.fromMCode(code)
+  }
+
+  def makeApi(ctx: PollingContext[CurlPoller]): CurlApi =
+    new CurlApi(ctx)
+
+  def poll(poller: CurlPoller, nanos: Long): PollResult = {
+    if (nanos == 0L) {
+      // Non-blocking: check if we have pending callbacks
+      if (poller.callbacks.nonEmpty) PollResult.Complete
+      else PollResult.Interrupted
+    } else {
+      // Blocking: wait for activity via curl_multi_poll
+      val timeoutMillis =
+        if (nanos < 0L) Int.MaxValue
+        else {
+          val ms = nanos / 1000000L
+          if (ms > Int.MaxValue.toLong) Int.MaxValue else ms.toInt
+        }
+
+      // Wait for activity; return code is intentionally ignored —
+      // processReadyEvents drives transfers and handles results
+      libcurl.curl_multi_poll(poller.multiHandle, null, 0.toUInt, timeoutMillis, null)
+      PollResult.Complete
     }
+  }
 
-    (new CurlExecutorScheduler(multiHandle, pollEvery), shutdown)
+  def processReadyEvents(poller: CurlPoller): Boolean = {
+    // Prevent re-entrancy: callbacks fired by curl_multi_perform can cause
+    // fiber rescheduling that re-enters this method on the same worker thread.
+    if (poller.processing) return false
+    poller.processing = true
+    try {
+      // Drive all transfers
+      val runningHandles = stackalloc[CInt]()
+      val performCode = libcurl.curl_multi_perform(poller.multiHandle, runningHandles)
+      // CURLM_RECURSIVE_API_CALL (8): curl detected a re-entrant call triggered
+      // by callback-induced fiber rescheduling. No data is lost — defer to the
+      // next polling iteration.
+      if (performCode.isError && performCode.value != 8) throw CurlError.fromMCode(
+        performCode
+      )
+
+      // Drain completed transfers and fire callbacks
+      drainCompletedTransfers(poller)
+    } finally {
+      poller.processing = false
+    }
+  }
+
+  def needsPoll(poller: CurlPoller): Boolean =
+    !poller.callbacks.isEmpty
+
+  def interrupt(targetThread: Thread, targetPoller: CurlPoller): Unit = {
+    val code = libcurl.curl_multi_wakeup(targetPoller.multiHandle)
+    if (code.isError) throw CurlError.fromMCode(code)
+  }
+
+  def metrics(poller: CurlPoller): PollerMetrics = poller
+
+  private def drainCompletedTransfers(poller: CurlPoller): Boolean = {
+    var fired = false
+    val msgsInQueue = stackalloc[CInt]()
+    var info = libcurl.curl_multi_info_read(poller.multiHandle, msgsInQueue)
+    while (info != null) {
+      val curMsg = libcurl.curl_CURLMsg_msg(info)
+      if (curMsg == libcurl_const.CURLMSG_DONE) {
+        val handle = libcurl.curl_CURLMsg_easy_handle(info)
+        poller.callbacks.remove(handle).foreach { cb =>
+          val result = libcurl.curl_CURLMsg_data_result(info)
+          cb(if (result.isOk) Right(()) else Left(CurlError.fromCode(result)))
+          fired = true
+        }
+        val code = libcurl.curl_multi_remove_handle(poller.multiHandle, handle)
+        if (code.isError) throw CurlError.fromMCode(code)
+      }
+      info = libcurl.curl_multi_info_read(poller.multiHandle, msgsInQueue)
+    }
+    fired
   }
 }
