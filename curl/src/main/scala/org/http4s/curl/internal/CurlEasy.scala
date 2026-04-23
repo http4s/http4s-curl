@@ -27,6 +27,11 @@ import scala.scalanative.unsigned._
 
 final private[curl] class CurlEasy private (val curl: Ptr[CURL], errBuffer: Ptr[CChar]) {
 
+  // GC rooting for CFuncPtr wrappers — prevents Scala Native GC from collecting them
+  private var _headerCallback: Any = null
+  private var _writeCallback: Any = null
+  private var _readCallback: Any = null
+
   @inline private def throwOnError(thunk: => CURLcode): Unit = {
     val code = thunk
     if (code.isError) {
@@ -50,9 +55,12 @@ final private[curl] class CurlEasy private (val curl: Ptr[CURL], errBuffer: Ptr[
 
   def setHeaderFunction(
       header_callback: header_callback
-  ): Unit = throwOnError(
-    curl_easy_setopt_headerfunction(curl, CURLOPT_HEADERFUNCTION, header_callback)
-  )
+  ): Unit = {
+    _headerCallback = header_callback
+    throwOnError(
+      curl_easy_setopt_headerfunction(curl, CURLOPT_HEADERFUNCTION, header_callback)
+    )
+  }
 
   def setHeaderData(
       pointer: Ptr[Byte]
@@ -60,9 +68,12 @@ final private[curl] class CurlEasy private (val curl: Ptr[CURL], errBuffer: Ptr[
 
   def setWriteFunction(
       write_callback: write_callback
-  ): Unit = throwOnError(
-    curl_easy_setopt_writefunction(curl, CURLOPT_WRITEFUNCTION, write_callback)
-  )
+  ): Unit = {
+    _writeCallback = write_callback
+    throwOnError(
+      curl_easy_setopt_writefunction(curl, CURLOPT_WRITEFUNCTION, write_callback)
+    )
+  }
 
   def setWriteData(
       pointer: Ptr[Byte]
@@ -70,7 +81,10 @@ final private[curl] class CurlEasy private (val curl: Ptr[CURL], errBuffer: Ptr[
 
   def setReadFunction(
       read_callback: read_callback
-  ): Unit = throwOnError(curl_easy_setopt_readfunction(curl, CURLOPT_READFUNCTION, read_callback))
+  ): Unit = {
+    _readCallback = read_callback
+    throwOnError(curl_easy_setopt_readfunction(curl, CURLOPT_READFUNCTION, read_callback))
+  }
 
   def setReadData(
       pointer: Ptr[Byte]

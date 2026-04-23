@@ -78,6 +78,8 @@ private[curl] object libcurl_const {
   // Global initialization flags
   final val CURL_GLOBAL_DEFAULT = 2 // CURL_GLOBAL_SSL | CURL_GLOBAL_WIN32
 
+  final val CURLM_RECURSIVE_API_CALL: CInt = 8
+
   // Minimum curl version for websocket support (7.87.0)
   final val CURL_WS_MIN_VERSION = 0x75700
 }
@@ -132,6 +134,7 @@ private[curl] object libcurl {
 
   def curl_multi_cleanup(multi_handle: Ptr[CURLM]): CURLMcode = extern
 
+  @blocking
   def curl_multi_poll(
       multi_handle: Ptr[CURLM],
       extra_fds: Ptr[Byte],

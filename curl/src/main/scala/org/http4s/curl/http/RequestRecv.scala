@@ -81,7 +81,7 @@ final private[curl] class RequestRecv private (
       nmemb: CSize,
   ): CSize =
     if (responseBodyQueueReady.get.unsafeRunSync()) {
-      responseBodyQueueReady.set(false)
+      responseBodyQueueReady.set(false).unsafeRunSync()
       dispatcher.unsafeRunAndForget(
         responseBodyQueue.offer(Some(ByteVector.fromPtr(buffer, nmemb.toLong)))
       )
