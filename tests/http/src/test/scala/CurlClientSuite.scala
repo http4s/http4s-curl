@@ -21,7 +21,6 @@ import cats.effect.SyncIO
 import cats.effect.kernel.Resource
 import cats.effect.std.Random
 import cats.effect.unsafe.IORuntime
-import cats.syntax.all._
 import munit.CatsEffectSuite
 import org.http4s.Method._
 import org.http4s.Request

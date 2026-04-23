@@ -28,8 +28,12 @@ import scala.scalanative.unsigned._
 final private[curl] class CurlEasy private (val curl: Ptr[CURL], errBuffer: Ptr[CChar]) {
 
   // GC rooting for CFuncPtr wrappers — prevents Scala Native GC from collecting them
+  // These are intentionally write-only: they keep callback references alive on the heap.
+  @annotation.nowarn("msg=(never used|unused)")
   private var _headerCallback: Any = null
+  @annotation.nowarn("msg=(never used|unused)")
   private var _writeCallback: Any = null
+  @annotation.nowarn("msg=(never used|unused)")
   private var _readCallback: Any = null
 
   @inline private def throwOnError(thunk: => CURLcode): Unit = {

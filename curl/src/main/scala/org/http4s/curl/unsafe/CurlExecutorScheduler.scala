@@ -21,6 +21,8 @@ import cats.effect.kernel.Resource
 import cats.effect.unsafe.Scheduler
 import org.http4s.curl.CurlError
 
+import java.util.ArrayDeque
+import java.util.PriorityQueue
 import scala.collection.mutable
 import scala.concurrent.ExecutionContext
 import scala.concurrent.ExecutionContextExecutor
@@ -28,8 +30,6 @@ import scala.concurrent.duration._
 import scala.scalanative.unsafe._
 import scala.scalanative.unsigned._
 import scala.util.control.NonFatal
-
-import java.util.{ArrayDeque, PriorityQueue}
 
 final class CurlExecutorScheduler(
     private[this] val multiHandle: Ptr[libcurl.CURLM],
@@ -40,8 +40,8 @@ final class CurlExecutorScheduler(
   private[this] var needsReschedule: Boolean = true
   private[this] val executeQueue: ArrayDeque[Runnable] = new ArrayDeque
   private[this] val sleepQueue: PriorityQueue[SleepTask] = new PriorityQueue
-  private[this] val callbacks
-      : mutable.Map[Ptr[libcurl.CURL], Either[Throwable, Unit] => Unit] = mutable.Map.empty
+  private[this] val callbacks: mutable.Map[Ptr[libcurl.CURL], Either[Throwable, Unit] => Unit] =
+    mutable.Map.empty
   private[this] val noop: Runnable = () => ()
 
   // ExecutionContext
@@ -184,7 +184,7 @@ final class CurlExecutorScheduler(
       IO(callbacks.remove(handle).foreach(_(Right(()))))
     }
 
-  private[this] final class SleepTask(val at: Long, val runnable: Runnable)
+  final private[this] class SleepTask(val at: Long, val runnable: Runnable)
       extends Runnable
       with Comparable[SleepTask] {
     def run(): Unit = { sleepQueue.remove(this); () }

@@ -53,7 +53,7 @@ object CurlRuntime {
     if (_global == null) {
       installGlobal {
         CurlRuntime()
-      }
+      }: Unit
     }
 
     _global
