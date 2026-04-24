@@ -45,7 +45,7 @@ final private[curl] class RequestRecv private (
     done: Deferred[IO, Either[Throwable, Unit]],
     dispatcher: Dispatcher[IO],
 ) {
-  @inline val responseBody: Stream[IO, Byte] = Stream
+  val responseBody: Stream[IO, Byte] = Stream
     .repeatEval(
       // sequencing is important! the docs for `curl_easy_pause` say:
       // > When this function is called to unpause receiving,
@@ -57,33 +57,40 @@ final private[curl] class RequestRecv private (
     .map(Chunk.byteVector(_))
     .unchunks
 
-  @inline def response(): Resource[IO, Response[IO]] = responseD.get.rethrow
+  def response(): Resource[IO, Response[IO]] = responseD.get.rethrow
     .map(_.withBodyStream(responseBody).withTrailerHeaders(trailerHeaders.get.rethrow))
     .toResource
 
-  @inline def onTerminated(x: Either[Throwable, Unit]): Unit =
+  def onTerminated(x: Either[Throwable, Unit]): Unit =
     dispatcher.unsafeRunAndForget(
-      // TODO refactor to make it simpler
-      x.fold(x => responseD.complete(Left(x)), _ => IO.unit) *>
+      responseD.complete(
+        x.fold(
+          Left(_),
+          _ =>
+            Left(
+              new RuntimeException("Connection terminated before response headers were received")
+            ),
+        )
+      ) *>
         done.complete(x) *> responseBodyQueue.offer(None)
     )
 
-  @inline def onWrite(
+  def onWrite(
       buffer: Ptr[CChar],
       size: CSize,
       nmemb: CSize,
   ): CSize =
     if (responseBodyQueueReady.get.unsafeRunSync()) {
-      responseBodyQueueReady.set(false)
+      responseBodyQueueReady.set(false).unsafeRunSync()
       dispatcher.unsafeRunAndForget(
         responseBodyQueue.offer(Some(ByteVector.fromPtr(buffer, nmemb.toLong)))
       )
       size * nmemb
     } else {
       flowControl.onRecvPaused.unsafeRunSync()
-      libcurl_const.CURL_WRITEFUNC_PAUSE.toULong
+      libcurl_const.CURL_WRITEFUNC_PAUSE.toUSize
     }
-  @inline def onHeader(
+  def onHeader(
       buffer: Ptr[CChar],
       size: CSize,
       nitems: CSize,
@@ -94,9 +101,10 @@ final private[curl] class RequestRecv private (
       .liftTo[IO]
 
     def parseHeader(header: String): IO[Header.Raw] =
-      header.dropRight(2).split(": ") match {
-        case Array(name, value) => IO.pure(Header.Raw(CIString(name), value))
-        case _ => IO.raiseError(new RuntimeException("header_callback"))
+      header.dropRight(2).split(":", 2) match {
+        case Array(name, value) => IO.pure(Header.Raw(CIString(name), value.trim))
+        case _ =>
+          IO.raiseError(new RuntimeException(s"header_callback: failed to parse header: '$header'"))
       }
 
     val go = responseD.tryGet
@@ -113,7 +121,12 @@ final private[curl] class RequestRecv private (
                     status <- IO(c.toInt).flatMap(Status.fromInt(_).liftTo[IO])
                     _ <- responseBuilder.set(Some(Response[IO](status, version)))
                   } yield ()
-                case _ => IO.raiseError(new RuntimeException("header_callback"))
+                case _ =>
+                  IO.raiseError(
+                    new RuntimeException(
+                      s"header_callback: failed to parse status line: '$decoded'"
+                    )
+                  )
               }
             case Some(wipResponse) =>
               decoded.flatMap {

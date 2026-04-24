@@ -36,13 +36,15 @@ final private class Breaker private (
     open: Int,
     verbose: Boolean,
 ) {
-  private val unpauseRecv = IO.blocking {
+  // curl_easy_pause is a blocking C call, but on Scala Native there is no
+  // separate blocking thread pool, so IO.blocking is equivalent to IO.apply.
+  private val unpauseRecv = IO {
     if (verbose) println("continue recv")
 
     handler.pause(libcurl_const.CURLPAUSE_RECV_CONT)
   }
 
-  private val pauseRecv = IO.blocking {
+  private val pauseRecv = IO {
     if (verbose) println("pause recv")
     handler.pause(libcurl_const.CURLPAUSE_RECV)
   }

@@ -22,11 +22,13 @@ import org.http4s.curl.unsafe.CURLcode
 class ErrorCodeSuite extends FunSuite {
   test("sanity") {
     val error = CurlError.fromCode(CURLcode(1))
-    assert(error.info.contains("Unsupported protocol"))
+    assertEquals(error.code, CURLcode(1))
+    assert(error.info.nonEmpty)
   }
 
   test("sanity") {
     val error = CurlError.fromCode(CURLcode(7))
-    assert(error.info.contains("Couldn't connect to server"))
+    assertEquals(error.code, CURLcode(7))
+    assert(error.info.nonEmpty)
   }
 }

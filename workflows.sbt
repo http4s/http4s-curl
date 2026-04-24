@@ -3,7 +3,7 @@ ThisBuild / githubWorkflowJavaVersions := Seq(JavaSpec.temurin("17"))
 ThisBuild / githubWorkflowOSes :=
   Seq("ubuntu-latest", "ubuntu-20.04", "ubuntu-22.04", "macos-11", "macos-12", "windows-2022")
 ThisBuild / githubWorkflowBuildMatrixExclusions ++= Seq(
-  MatrixExclude(Map("scala" -> Versions.scala3, "os" -> "windows-2022")), // dottydoc bug
+  MatrixExclude(Map("scala" -> "3", "os" -> "windows-2022")), // dottydoc bug
   MatrixExclude(Map("project" -> "rootJVM")), // no need to run
 )
 
@@ -18,7 +18,7 @@ ThisBuild / githubWorkflowBuildPostamble ~= {
 ThisBuild / githubWorkflowGeneratedCI ~= {
   _.map { job =>
     if (job.id == "build")
-      job.copy(env = job.env.updated("EXPERIMENTAL", s"$${{ matrix.experimental }}"))
+      job.withEnv(job.env.updated("EXPERIMENTAL", s"$${{ matrix.experimental }}"))
     else job
   }
 }
@@ -63,7 +63,7 @@ ThisBuild / githubWorkflowJobSetup ++= Seq(
 ThisBuild / githubWorkflowBuild ~= { steps =>
   steps.map {
     case step: WorkflowStep.Sbt if step.name == Some("Test") =>
-      step.copy(commands = List("integrate"))
+      step.withCommands(List("integrate"))
     case other => other
   }
 }

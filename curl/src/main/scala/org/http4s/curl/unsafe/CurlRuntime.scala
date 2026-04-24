@@ -19,24 +19,33 @@ package unsafe
 
 import cats.effect.unsafe.IORuntime
 import cats.effect.unsafe.IORuntimeConfig
-import cats.effect.unsafe.Scheduler
 
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.ExecutionContext
 import scala.scalanative.unsafe._
 
 object CurlRuntime {
 
+  private[this] var _api: CurlApi = null
+
   def apply(): IORuntime = apply(IORuntimeConfig())
 
   def apply(config: IORuntimeConfig): IORuntime = {
-    val (ecScheduler, shutdown) = defaultExecutionContextScheduler()
-    IORuntime(ecScheduler, ecScheduler, ecScheduler, shutdown, config)
+    val (compute, api, shutdown) =
+      IORuntime.createWorkStealingComputeThreadPool(
+        pollingSystem = new CurlPollingSystem,
+        threads = 2,
+      )
+    _api = api
+    IORuntime(compute, compute, compute, List(api), shutdown, config)
   }
 
-  def defaultExecutionContextScheduler(): (ExecutionContext with Scheduler, () => Unit) = {
-    val (ecScheduler, shutdown) = CurlExecutorScheduler(64)
-    (ecScheduler, shutdown)
+  /** Returns the CurlApi from the most recently created CurlRuntime.
+    * Accessible within the http4s.curl package hierarchy.
+    */
+  private[curl] def api: CurlApi = {
+    if (_api == null) { global; () }
+    if (_api == null) throw new RuntimeException("CurlRuntime not initialized")
+    _api
   }
 
   private[this] var _global: IORuntime = null
@@ -53,7 +62,7 @@ object CurlRuntime {
     if (_global == null) {
       installGlobal {
         CurlRuntime()
-      }
+      }: Unit
     }
 
     _global

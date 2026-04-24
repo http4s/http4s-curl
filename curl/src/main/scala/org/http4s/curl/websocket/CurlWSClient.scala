@@ -21,7 +21,7 @@ import cats.effect.IO
 import cats.implicits._
 import org.http4s.client.websocket.WSFrame._
 import org.http4s.client.websocket._
-import org.http4s.curl.unsafe.CurlExecutorScheduler
+import org.http4s.curl.unsafe.CurlApi
 import org.http4s.curl.unsafe.CurlRuntime
 import org.http4s.curl.unsafe.libcurl_const
 import scodec.bits.ByteVector
@@ -34,24 +34,22 @@ private[curl] object CurlWSClient {
       pauseOn: Int = 10,
       resumeOn: Int = 30,
       verbose: Boolean = false,
-  ): IO[WSClient[IO]] = IO.executionContext.flatMap {
-    case ec: CurlExecutorScheduler =>
-      IO.fromOption(apply(ec, recvBufferSize, pauseOn, resumeOn, verbose))(
-        new RuntimeException("websocket client is not supported in this environment")
-      )
-    case _ => IO.raiseError(new RuntimeException("Not running on CurlExecutorScheduler"))
-  }
+  ): IO[WSClient[IO]] = IO.fromOption(
+    apply(CurlRuntime.api, recvBufferSize, pauseOn, resumeOn, verbose)
+  )(new RuntimeException("WebSocket is not supported in this environment"))
 
   def apply(
-      ec: CurlExecutorScheduler,
+      api: CurlApi,
       recvBufferSize: Int,
       pauseOn: Int,
       resumeOn: Int,
       verbose: Boolean,
   ): Option[WSClient[IO]] =
-    Option.when(CurlRuntime.isWebsocketAvailable && CurlRuntime.curlVersionNumber >= 0x75700) {
+    Option.when(
+      CurlRuntime.isWebsocketAvailable && CurlRuntime.curlVersionNumber >= libcurl_const.CURL_WS_MIN_VERSION
+    ) {
       WSClient(true) { req =>
-        Connection(req, ec, recvBufferSize, pauseOn, resumeOn, verbose)
+        Connection(req, api, recvBufferSize, pauseOn, resumeOn, verbose)
           .map(con =>
             new WSConnection[IO] {
               override def send(wsf: WSFrame): IO[Unit] = wsf match {

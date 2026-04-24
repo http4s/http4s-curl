@@ -74,6 +74,14 @@ private[curl] object libcurl_const {
 
   // websocket options flags
   final val CURLWS_RAW_MODE = 1 << 0
+
+  // Global initialization flags
+  final val CURL_GLOBAL_DEFAULT = 2 // CURL_GLOBAL_SSL | CURL_GLOBAL_WIN32
+
+  final val CURLM_RECURSIVE_API_CALL: CInt = 8
+
+  // Minimum curl version for websocket support (7.87.0)
+  final val CURL_WS_MIN_VERSION = 0x75700
 }
 
 final private[curl] case class CURLcode(value: CInt) extends AnyVal {
@@ -126,6 +134,7 @@ private[curl] object libcurl {
 
   def curl_multi_cleanup(multi_handle: Ptr[CURLM]): CURLMcode = extern
 
+  @blocking
   def curl_multi_poll(
       multi_handle: Ptr[CURLM],
       extra_fds: Ptr[Byte],
@@ -160,6 +169,8 @@ private[curl] object libcurl {
   def curl_multi_add_handle(multi_handle: Ptr[CURLM], curl_handle: Ptr[CURL]): CURLMcode = extern
 
   def curl_multi_remove_handle(multi_handle: Ptr[CURLM], curl_handle: Ptr[CURL]): CURLMcode = extern
+
+  def curl_multi_wakeup(multi_handle: Ptr[CURLM]): CURLMcode = extern
 
   def curl_easy_init(): Ptr[CURL] = extern
 

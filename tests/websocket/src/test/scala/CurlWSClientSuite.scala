@@ -67,14 +67,14 @@ class CurlWSClientSuite extends CatsEffectSuite {
       .parReplicateA_(4)
   }
 
-  clientFixture.test("error") { client =>
+  clientFixture.test("error - empty URI") { client =>
     client
       .connectHighLevel(WSRequest(uri""))
       .use_
       .intercept[CurlError]
   }
 
-  clientFixture.test("error") { client =>
+  clientFixture.test("error - invalid URI") { client =>
     client
       .connectHighLevel(WSRequest(uri"server"))
       .use_
